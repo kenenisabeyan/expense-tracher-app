@@ -1,0 +1,73 @@
+* {
+  box-sizing: border-box;
+  font-family: Arial, sans-serif;
+}
+
+body {
+  background: #f4f6f8;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+.container {
+  background: white;
+  width: 360px;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+h1,
+h2 {
+  text-align: center;
+}
+
+.summary {
+  display: flex;
+  justify-content: space-between;
+  margin: 15px 0;
+}
+
+.income p {
+  color: green;
+}
+
+.expense p {
+  color: red;
+}
+
+input,
+button {
+  width: 100%;
+  padding: 8px;
+  margin: 5px 0;
+}
+
+button {
+  background: #007bff;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #0056b3;
+}
+
+li {
+  background: #eee;
+  padding: 8px;
+  margin-top: 5px;
+  display: flex;
+  justify-content: space-between;
+}
+
+li.plus {
+  border-right: 5px solid green;
+}
+
+li.minus {
+  border-right: 5px solid red;
+}
