@@ -4,16 +4,29 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="description" content="Offline-first Smart Expense Tracker, Budget Manager, and Analytics Dashboard.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
   <title>Smart Expense Tracker & Budget Manager</title>
+  
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <!-- Chart.js for visual spending insights -->
+  
+  <!-- Chart.js for spending visualizer -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
+  <!-- Offline Network Banner -->
+  <div id="offlineBanner" class="offline-banner hidden">
+    <span>📡 Working in Offline Mode (Changes saved locally)</span>
+  </div>
+
   <div class="app-layout">
     <!-- Top Header Navigation -->
     <header class="app-header">
@@ -21,11 +34,21 @@
         <div class="brand-icon">💰</div>
         <div>
           <h1>Smart Expense Tracker</h1>
-          <p class="subtitle">Track, analyze, and manage your cash flow</p>
+          <p class="subtitle">Budget manager, analytics & cash flow manager</p>
         </div>
       </div>
 
       <div class="header-actions">
+        <!-- Budget Manager Modal Trigger -->
+        <button id="openBudgetBtn" class="btn-action-header" title="Manage Monthly Budgets">
+          🎯 <span class="btn-text">Budgets</span>
+        </button>
+
+        <!-- Backup & Restore Modal Trigger -->
+        <button id="openBackupBtn" class="btn-action-header" title="Backup or Restore Data">
+          💾 <span class="btn-text">Backup</span>
+        </button>
+
         <!-- Currency Selector -->
         <div class="currency-wrapper">
           <label for="currencySelect" class="sr-only">Currency</label>
@@ -81,9 +104,9 @@
       </div>
     </section>
 
-    <!-- Main Content Area -->
+    <!-- Main Content Grid -->
     <div class="main-grid">
-      <!-- Left Column: Add / Edit Form & Analytics -->
+      <!-- Left Column: Add/Edit Form, Budgets & Chart -->
       <div class="column-left">
         <!-- Add / Edit Form Card -->
         <div class="card form-card">
@@ -122,7 +145,7 @@
               <div class="form-group flex-1">
                 <label for="category">Category</label>
                 <select id="category" required>
-                  <!-- Populated dynamically based on Income / Expense -->
+                  <!-- Populated dynamically -->
                 </select>
               </div>
             </div>
@@ -143,6 +166,21 @@
               </button>
             </div>
           </form>
+        </div>
+
+        <!-- Monthly Budget Goals & Threshold Alerts Card -->
+        <div class="card budget-card">
+          <div class="card-header">
+            <div>
+              <h3>Monthly Budgets</h3>
+              <p class="card-subtext" id="currentMonthYearLabel">Current Month</p>
+            </div>
+            <button id="editBudgetsQuickBtn" class="btn-sm btn-outline">⚙️ Configure</button>
+          </div>
+          
+          <div id="budgetProgressList" class="budget-progress-list">
+            <!-- Populated via script.js -->
+          </div>
         </div>
 
         <!-- Expense Breakdown Chart Card -->
@@ -170,7 +208,7 @@
             </div>
             <div class="quick-tools">
               <button id="exportCsvBtn" class="btn-sm btn-outline" title="Export transactions to CSV">
-                📥 Export CSV
+                📥 CSV
               </button>
               <button id="clearAllBtn" class="btn-sm btn-danger-outline" title="Clear all records">
                 🗑️ Clear All
@@ -220,6 +258,75 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       MODAL: BUDGET CONFIGURATION
+       ======================================================== -->
+  <div id="budgetModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="budgetModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="budgetModalTitle">🎯 Configure Category Budgets</h3>
+        <button class="modal-close-btn" id="closeBudgetModalBtn" aria-label="Close Modal">&times;</button>
+      </div>
+      <p class="modal-description">Set monthly spending limits for each expense category. Leave blank or 0 for unbudgeted categories.</p>
+      
+      <form id="budgetConfigForm">
+        <div id="budgetInputsContainer" class="budget-inputs-container">
+          <!-- Populated dynamically with category inputs -->
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="cancelBudgetBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Budgets</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       MODAL: DATA BACKUP & RESTORE (JSON IMPORT/EXPORT)
+       ======================================================== -->
+  <div id="backupModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="backupModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="backupModalTitle">💾 Data Backup & Restore</h3>
+        <button class="modal-close-btn" id="closeBackupModalBtn" aria-label="Close Modal">&times;</button>
+      </div>
+
+      <div class="backup-section">
+        <h4>Export Snapshot (Full JSON)</h4>
+        <p class="modal-description">Download your entire transaction history, budgets, and settings in a single portable JSON file.</p>
+        <button id="downloadJsonBtn" class="btn btn-primary">
+          📤 Export Full JSON Backup
+        </button>
+      </div>
+
+      <hr class="modal-divider">
+
+      <div class="backup-section">
+        <h4>Restore from JSON</h4>
+        <p class="modal-description">Import a previously saved `.json` backup file.</p>
+        
+        <div class="file-upload-box">
+          <input type="file" id="jsonFileInput" accept=".json" class="file-input">
+        </div>
+
+        <div class="import-mode-selection">
+          <label>
+            <input type="radio" name="importMode" value="merge" checked>
+            <span><strong>Merge</strong> with existing transactions (skip duplicates)</span>
+          </label>
+          <label>
+            <input type="radio" name="importMode" value="replace">
+            <span><strong>Replace</strong> all existing data with file contents</span>
+          </label>
+        </div>
+
+        <button id="restoreJsonBtn" class="btn btn-secondary" disabled>
+          📥 Restore Data
+        </button>
       </div>
     </div>
   </div>
