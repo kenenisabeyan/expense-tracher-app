@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity="0.25" />
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#grad)" />
+  <g filter="url(#shadow)">
+    <!-- Wallet / Vault Symbol -->
+    <rect x="96" y="140" width="320" height="232" rx="36" fill="#ffffff" />
+    <path d="M96 200h320" stroke="#f1f5f9" stroke-width="8" />
+    <!-- Flap / Clasp -->
+    <path d="M290 220h126v72H290a36 36 0 0 1 0-72z" fill="#4f46e5" />
+    <circle cx="340" cy="256" r="14" fill="#fbbf24" />
+    <!-- Rising Graph Trend -->
+    <path d="M140 310l50-45 45 25 70-65" fill="none" stroke="#10b981" stroke-width="12" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="305" cy="225" r="7" fill="#10b981" />
+  </g>
+</svg>
