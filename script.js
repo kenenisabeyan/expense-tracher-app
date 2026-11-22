@@ -1,15 +1,20 @@
 /**
- * SMART EXPENSE TRACKER & BUDGET MANAGER (PWA EDITION)
- * Upgraded Features:
+ * SMART EXPENSE TRACKER & BUDGET MANAGER (PRO PWA EDITION)
+ * Advanced Features:
  * - Dynamic Categories with icons for Income & Expense
  * - Explicit Type Switcher (Income vs Expense)
  * - Complete CRUD (Add, Edit, Delete, Clear All)
- * - Visual Category Breakdown (Chart.js Doughnut Chart)
+ * - Dual Analytics Visualizer:
+ *     1. Category Doughnut Chart
+ *     2. 6-Month Income vs Expense Cash Flow Trend Bar Chart
+ * - Financial Runway & Health Insights Engine
  * - Monthly Budget Goals & Threshold Progress/Alerts
+ * - Quick Date Preset Filter Pills (All Time, This Month, Last Month, This Year)
  * - Full JSON Backup & Restore (Merge or Replace) + CSV Export
+ * - Toast Notification Engine
+ * - Global Keyboard Shortcuts (Ctrl+N, Ctrl+B, Esc)
  * - PWA Offline Installation (Service Worker + Manifest)
  * - Multi-Currency Support (USD, EUR, GBP, ETB, INR, JPY, CAD, AUD)
- * - Search, Filter by Type & Category, and 4-way Sorting
  * - Dark & Light Mode with LocalStorage persistence
  */
 
@@ -36,7 +41,6 @@ const CATEGORIES = {
   ]
 };
 
-// Default monthly budgets
 const DEFAULT_BUDGETS = {
   "Food & Drinks": 300,
   "Transportation": 120,
@@ -53,6 +57,8 @@ const incomeEl = document.getElementById("income");
 const incomeCountEl = document.getElementById("incomeCount");
 const expenseEl = document.getElementById("expense");
 const expenseCountEl = document.getElementById("expenseCount");
+const runwayValueEl = document.getElementById("runwayValue");
+const runwaySubtextEl = document.getElementById("runwaySubtext");
 
 const transactionForm = document.getElementById("transactionForm");
 const textInput = document.getElementById("text");
@@ -74,6 +80,7 @@ const searchInput = document.getElementById("searchInput");
 const filterTypeSelect = document.getElementById("filterType");
 const filterCategorySelect = document.getElementById("filterCategory");
 const sortBySelect = document.getElementById("sortBy");
+const datePresetPills = document.querySelectorAll(".preset-pill");
 const transactionsList = document.getElementById("list");
 const emptyState = document.getElementById("emptyState");
 const historyCountEl = document.getElementById("historyCount");
@@ -84,10 +91,13 @@ const clearAllBtn = document.getElementById("clearAllBtn");
 const themeToggleBtn = document.getElementById("themeToggle");
 const themeIcon = document.getElementById("themeIcon");
 const offlineBanner = document.getElementById("offlineBanner");
+const toastContainer = document.getElementById("toastContainer");
 
 // Chart elements
 const chartCanvas = document.getElementById("categoryChart");
 const chartPlaceholder = document.getElementById("chartPlaceholder");
+const chartTabCategory = document.getElementById("chartTabCategory");
+const chartTabCashflow = document.getElementById("chartTabCashflow");
 
 // Budget elements
 const budgetProgressList = document.getElementById("budgetProgressList");
@@ -99,6 +109,17 @@ const closeBudgetModalBtn = document.getElementById("closeBudgetModalBtn");
 const cancelBudgetBtn = document.getElementById("cancelBudgetBtn");
 const budgetConfigForm = document.getElementById("budgetConfigForm");
 const budgetInputsContainer = document.getElementById("budgetInputsContainer");
+
+// Financial Insights elements
+const openInsightsBtn = document.getElementById("openInsightsBtn");
+const insightsModal = document.getElementById("insightsModal");
+const closeInsightsModalBtn = document.getElementById("closeInsightsModalBtn");
+const closeInsightsActionBtn = document.getElementById("closeInsightsActionBtn");
+const insightAvgBurn = document.getElementById("insightAvgBurn");
+const insightRunwayMonths = document.getElementById("insightRunwayMonths");
+const insightTopCategory = document.getElementById("insightTopCategory");
+const insightSavingsRate = document.getElementById("insightSavingsRate");
+const insightRecommendations = document.getElementById("insightRecommendations");
 
 // Backup & Restore elements
 const openBackupBtn = document.getElementById("openBackupBtn");
@@ -114,6 +135,8 @@ let editingId = null;
 let currentCurrency = localStorage.getItem("expense_currency") || "$";
 let currentTheme = localStorage.getItem("expense_theme") || "light";
 let budgets = JSON.parse(localStorage.getItem("expense_budgets")) || DEFAULT_BUDGETS;
+let activeChartTab = "category"; // 'category' or 'cashflow'
+let activeDatePreset = "all"; // 'all', 'this-month', 'last-month', 'this-year'
 let categoryChart = null;
 let pendingImportData = null;
 
@@ -135,6 +158,27 @@ let transactions = rawTransactions.map(t => {
     date: date
   };
 });
+
+// --- TOAST NOTIFICATIONS ---
+function showToast(message, type = "info", duration = 3000) {
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  
+  let icon = "ℹ️";
+  if (type === "success") icon = "✅";
+  if (type === "warning") icon = "⚠️";
+  
+  toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+  toastContainer.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transform = "translateY(12px) scale(0.95)";
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, duration);
+}
 
 // --- HELPER UTILITIES ---
 function formatCurrency(amount) {
@@ -250,7 +294,7 @@ function handleFormSubmit(e) {
   const dateVal = dateInput.value;
 
   if (!textVal || isNaN(amountVal) || amountVal <= 0 || !dateVal) {
-    alert("Please provide a valid description, date, and amount greater than 0.");
+    showToast("Please provide valid description, date, and amount > 0", "warning");
     return;
   }
 
@@ -268,6 +312,7 @@ function handleFormSubmit(e) {
       }
       return t;
     });
+    showToast("Transaction updated successfully", "success");
   } else {
     const newTransaction = {
       id: Date.now(),
@@ -278,6 +323,7 @@ function handleFormSubmit(e) {
       date: dateVal
     };
     transactions.unshift(newTransaction);
+    showToast("Transaction added successfully", "success");
   }
 
   saveTransactions();
@@ -293,12 +339,13 @@ function removeTransaction(id) {
     }
     saveTransactions();
     renderApp();
+    showToast("Transaction deleted", "info");
   }
 }
 
 function clearAllTransactions() {
   if (transactions.length === 0) {
-    alert("No transactions to clear.");
+    showToast("No transactions to clear", "info");
     return;
   }
 
@@ -307,10 +354,11 @@ function clearAllTransactions() {
     resetForm();
     saveTransactions();
     renderApp();
+    showToast("All transactions cleared", "warning");
   }
 }
 
-// --- STATS & DASHBOARD CALCULATIONS ---
+// --- STATS, RUNWAY & CASH FLOW CALCULATIONS ---
 function updateOverviewStats() {
   const incomeTotal = transactions
     .filter(t => t.type === "income")
@@ -345,6 +393,140 @@ function updateOverviewStats() {
   } else {
     savingsRateEl.textContent = expenseTotal > 0 ? "-100%" : "0%";
   }
+
+  // Calculate Monthly Burn and Runway
+  const monthlyExpenseMap = {};
+  transactions
+    .filter(t => t.type === "expense" && t.date)
+    .forEach(t => {
+      const ym = t.date.substring(0, 7);
+      monthlyExpenseMap[ym] = (monthlyExpenseMap[ym] || 0) + t.amount;
+    });
+
+  const monthKeys = Object.keys(monthlyExpenseMap);
+  const avgMonthlyBurn = monthKeys.length > 0
+    ? monthKeys.reduce((acc, m) => acc + monthlyExpenseMap[m], 0) / monthKeys.length
+    : expenseTotal;
+
+  if (netBalance <= 0) {
+    runwayValueEl.textContent = "0 Mos";
+    runwaySubtextEl.textContent = "Net balance in deficit";
+  } else if (avgMonthlyBurn <= 0) {
+    runwayValueEl.textContent = "∞ Mos";
+    runwaySubtextEl.textContent = "No monthly expenses logged";
+  } else {
+    const months = (netBalance / avgMonthlyBurn).toFixed(1);
+    runwayValueEl.textContent = `${months} Mos`;
+    runwaySubtextEl.textContent = `Avg burn: ${formatCurrency(avgMonthlyBurn)}/mo`;
+  }
+}
+
+// --- FINANCIAL HEALTH & INSIGHTS ENGINE ---
+function openInsightsModal() {
+  const incomeTotal = transactions
+    .filter(t => t.type === "income")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const expenseTotal = transactions
+    .filter(t => t.type === "expense")
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const netBalance = incomeTotal - expenseTotal;
+
+  const monthlyExpenseMap = {};
+  const categoryExpenses = {};
+
+  transactions
+    .filter(t => t.type === "expense")
+    .forEach(t => {
+      if (t.date) {
+        const ym = t.date.substring(0, 7);
+        monthlyExpenseMap[ym] = (monthlyExpenseMap[ym] || 0) + t.amount;
+      }
+      categoryExpenses[t.category] = (categoryExpenses[t.category] || 0) + t.amount;
+    });
+
+  const monthKeys = Object.keys(monthlyExpenseMap);
+  const avgMonthlyBurn = monthKeys.length > 0
+    ? monthKeys.reduce((acc, m) => acc + monthlyExpenseMap[m], 0) / monthKeys.length
+    : expenseTotal;
+
+  const runwayMonths = (netBalance > 0 && avgMonthlyBurn > 0)
+    ? (netBalance / avgMonthlyBurn).toFixed(1)
+    : "0";
+
+  // Identify top category
+  let topCatName = "None";
+  let topCatAmount = 0;
+  for (const [cat, amt] of Object.entries(categoryExpenses)) {
+    if (amt > topCatAmount) {
+      topCatAmount = amt;
+      topCatName = cat;
+    }
+  }
+
+  const savingsRate = incomeTotal > 0 ? Math.round(((incomeTotal - expenseTotal) / incomeTotal) * 100) : 0;
+
+  insightAvgBurn.textContent = formatCurrency(avgMonthlyBurn);
+  insightRunwayMonths.textContent = `${runwayMonths} Months`;
+  insightTopCategory.textContent = topCatName !== "None" ? `${topCatName} (${formatCurrency(topCatAmount)})` : "None";
+  insightSavingsRate.textContent = `${savingsRate}%`;
+
+  // Generate dynamic recommendations
+  insightRecommendations.innerHTML = "";
+  const tips = [];
+
+  if (parseFloat(runwayMonths) < 3 && netBalance > 0) {
+    tips.push({
+      icon: "🚨",
+      text: "<strong>Low Runway Alert:</strong> Your emergency runway is under 3 months. Aim to save at least 3-6 months of living expenses."
+    });
+  } else if (parseFloat(runwayMonths) >= 6) {
+    tips.push({
+      icon: "🌟",
+      text: "<strong>Strong Resilience:</strong> You have over 6 months of financial runway! Consider allocating excess savings toward investments."
+    });
+  }
+
+  if (topCatAmount > 0 && expenseTotal > 0) {
+    const pct = Math.round((topCatAmount / expenseTotal) * 100);
+    if (pct >= 40) {
+      tips.push({
+        icon: "⚠️",
+        text: `<strong>Category Concentration:</strong> <strong>${topCatName}</strong> represents ${pct}% of your total spending. Look for potential optimizations here.`
+      });
+    }
+  }
+
+  if (savingsRate >= 20) {
+    tips.push({
+      icon: "🎯",
+      text: "<strong>50/30/20 Rule:</strong> You're meeting the recommended 20%+ savings threshold! Keep up the disciplined cash flow."
+    });
+  } else if (savingsRate > 0) {
+    tips.push({
+      icon: "💡",
+      text: "<strong>Savings Opportunity:</strong> Your current savings rate is below 20%. Review non-essential subscriptions or shopping to increase margin."
+    });
+  } else {
+    tips.push({
+      icon: "🛑",
+      text: "<strong>Deficit Warning:</strong> Outflows are currently matching or exceeding inflows. Audit active budgets to avoid debt."
+    });
+  }
+
+  tips.forEach(t => {
+    const card = document.createElement("div");
+    card.className = "tip-card";
+    card.innerHTML = `<span class="tip-icon">${t.icon}</span> <div>${t.text}</div>`;
+    insightRecommendations.appendChild(card);
+  });
+
+  insightsModal.classList.remove("hidden");
+}
+
+function closeInsightsModal() {
+  insightsModal.classList.add("hidden");
 }
 
 // --- MONTHLY BUDGETS & THRESHOLD ALERTS ---
@@ -354,7 +536,6 @@ function renderBudgets() {
   
   currentMonthYearLabel.textContent = now.toLocaleDateString(undefined, { month: "long", year: "numeric" });
 
-  // Calculate current month's expenses per category
   const monthlyExpenses = {};
   transactions
     .filter(t => t.type === "expense" && t.date && t.date.startsWith(currentYearMonth))
@@ -456,14 +637,23 @@ function saveBudgets(e) {
   localStorage.setItem("expense_budgets", JSON.stringify(budgets));
   closeBudgetConfigModal();
   renderBudgets();
+  showToast("Category budgets saved", "success");
 }
 
-// --- CHART RENDERING ---
+// --- DUAL ANALYTICS CHART RENDERING ---
 function updateChart() {
   if (typeof Chart === "undefined") {
     return;
   }
 
+  if (activeChartTab === "category") {
+    renderCategoryDoughnut();
+  } else {
+    renderCashFlowBarChart();
+  }
+}
+
+function renderCategoryDoughnut() {
   const expenseTransactions = transactions.filter(t => t.type === "expense");
 
   if (expenseTransactions.length === 0) {
@@ -495,52 +685,142 @@ function updateChart() {
   ];
 
   if (categoryChart) {
-    categoryChart.data.labels = labels;
-    categoryChart.data.datasets[0].data = data;
-    categoryChart.data.datasets[0].backgroundColor = palette.slice(0, labels.length);
-    categoryChart.update();
-  } else {
-    const ctx = chartCanvas.getContext("2d");
-    categoryChart = new Chart(ctx, {
-      type: "doughnut",
-      data: {
-        labels: labels,
-        datasets: [{
-          data: data,
-          backgroundColor: palette.slice(0, labels.length),
-          borderWidth: 2,
-          borderColor: currentTheme === "dark" ? "#151d2f" : "#ffffff"
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: "bottom",
-            labels: {
-              boxWidth: 12,
-              padding: 12,
-              color: currentTheme === "dark" ? "#94a3b8" : "#64748b",
-              font: {
-                family: "'Plus Jakarta Sans', sans-serif",
-                size: 11
-              }
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: function (context) {
-                const val = context.raw || 0;
-                return ` ${context.label}: ${formatCurrency(val)}`;
-              }
-            }
+    categoryChart.destroy();
+  }
+
+  const ctx = chartCanvas.getContext("2d");
+  categoryChart = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels: labels,
+      datasets: [{
+        data: data,
+        backgroundColor: palette.slice(0, labels.length),
+        borderWidth: 2,
+        borderColor: currentTheme === "dark" ? "#151d2f" : "#ffffff"
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: {
+            boxWidth: 12,
+            padding: 10,
+            color: currentTheme === "dark" ? "#94a3b8" : "#64748b",
+            font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 }
           }
         },
-        cutout: "65%"
-      }
-    });
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              const val = context.raw || 0;
+              return ` ${context.label}: ${formatCurrency(val)}`;
+            }
+          }
+        }
+      },
+      cutout: "65%"
+    }
+  });
+}
+
+function renderCashFlowBarChart() {
+  if (transactions.length === 0) {
+    chartCanvas.style.display = "none";
+    chartPlaceholder.style.display = "block";
+    if (categoryChart) {
+      categoryChart.destroy();
+      categoryChart = null;
+    }
+    return;
   }
+
+  chartCanvas.style.display = "block";
+  chartPlaceholder.style.display = "none";
+
+  // Calculate past 6 months chronologically
+  const months = [];
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleDateString(undefined, { month: "short" });
+    months.push({ key, label });
+  }
+
+  const incomeData = [];
+  const expenseData = [];
+
+  months.forEach(m => {
+    const monthTx = transactions.filter(t => t.date && t.date.startsWith(m.key));
+    const inc = monthTx.filter(t => t.type === "income").reduce((sum, t) => sum + t.amount, 0);
+    const exp = monthTx.filter(t => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
+    incomeData.push(inc);
+    expenseData.push(exp);
+  });
+
+  if (categoryChart) {
+    categoryChart.destroy();
+  }
+
+  const ctx = chartCanvas.getContext("2d");
+  categoryChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: months.map(m => m.label),
+      datasets: [
+        {
+          label: "Income",
+          data: incomeData,
+          backgroundColor: "#10b981",
+          borderRadius: 4
+        },
+        {
+          label: "Expense",
+          data: expenseData,
+          backgroundColor: "#ef4444",
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: "top",
+          labels: {
+            boxWidth: 12,
+            color: currentTheme === "dark" ? "#94a3b8" : "#64748b",
+            font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              return ` ${context.dataset.label}: ${formatCurrency(context.raw)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: currentTheme === "dark" ? "#94a3b8" : "#64748b" }
+        },
+        y: {
+          grid: { color: currentTheme === "dark" ? "#27354f" : "#e2e8f0" },
+          ticks: {
+            color: currentTheme === "dark" ? "#94a3b8" : "#64748b",
+            callback: val => `${currentCurrency}${val}`
+          }
+        }
+      }
+    }
+  });
 }
 
 // --- FILTER, SEARCH & SORT TRANSACTIONS ---
@@ -550,11 +830,33 @@ function getFilteredAndSortedTransactions() {
   const filterCat = filterCategorySelect.value;
   const sortBy = sortBySelect.value;
 
+  const now = new Date();
+  const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastYM = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
+  const currentYear = `${now.getFullYear()}-`;
+
   let filtered = transactions.filter(t => {
+    // Search query match
     const matchesSearch = !query || t.text.toLowerCase().includes(query) || t.category.toLowerCase().includes(query);
+
+    // Type match
     const matchesType = filterType === "all" || t.type === filterType;
+
+    // Category match
     const matchesCategory = filterCat === "all" || t.category === filterCat;
-    return matchesSearch && matchesType && matchesCategory;
+
+    // Date preset match
+    let matchesPreset = true;
+    if (activeDatePreset === "this-month") {
+      matchesPreset = t.date && t.date.startsWith(currentYM);
+    } else if (activeDatePreset === "last-month") {
+      matchesPreset = t.date && t.date.startsWith(lastYM);
+    } else if (activeDatePreset === "this-year") {
+      matchesPreset = t.date && t.date.startsWith(currentYear);
+    }
+
+    return matchesSearch && matchesType && matchesCategory && matchesPreset;
   });
 
   filtered.sort((a, b) => {
@@ -627,7 +929,7 @@ function renderTransactionsList() {
 // --- DATA EXPORT (CSV & JSON) ---
 function exportToCSV() {
   if (transactions.length === 0) {
-    alert("No transaction records found to export.");
+    showToast("No records found to export", "info");
     return;
   }
 
@@ -653,12 +955,13 @@ function exportToCSV() {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  showToast("CSV file exported successfully", "success");
 }
 
 function exportToJSON() {
   const snapshot = {
     app: "Smart Expense Tracker",
-    version: "2.0",
+    version: "2.1",
     exportedAt: new Date().toISOString(),
     currency: currentCurrency,
     theme: currentTheme,
@@ -674,6 +977,7 @@ function exportToJSON() {
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   document.body.removeChild(downloadAnchor);
+  showToast("Full JSON snapshot exported", "success");
 }
 
 // --- DATA IMPORT (JSON RESTORE) ---
@@ -689,14 +993,15 @@ function handleJsonFileSelect(e) {
     try {
       const data = JSON.parse(event.target.result);
       if (!data || !Array.isArray(data.transactions)) {
-        alert("Invalid backup file: missing 'transactions' collection.");
+        showToast("Invalid backup: missing 'transactions' collection", "warning");
         restoreJsonBtn.disabled = true;
         return;
       }
       pendingImportData = data;
       restoreJsonBtn.disabled = false;
+      showToast(`Loaded file with ${data.transactions.length} records ready to restore`, "info");
     } catch (err) {
-      alert("Error reading JSON file: " + err.message);
+      showToast("JSON parsing error: " + err.message, "warning");
       restoreJsonBtn.disabled = true;
     }
   };
@@ -719,7 +1024,6 @@ function executeRestore() {
   if (mode === "replace") {
     transactions = incomingTransactions;
   } else {
-    // Merge mode: add only items with non-existent IDs
     const existingIds = new Set(transactions.map(t => t.id));
     const newItems = incomingTransactions.filter(t => !existingIds.has(t.id));
     transactions = [...newItems, ...transactions];
@@ -744,7 +1048,7 @@ function executeRestore() {
   pendingImportData = null;
 
   renderApp();
-  alert(`Data restored successfully in '${mode}' mode!`);
+  showToast(`Restored successfully in '${mode}' mode!`, "success");
 }
 
 // --- THEME & CURRENCY HANDLING ---
@@ -764,6 +1068,7 @@ function applyTheme(theme) {
 function toggleTheme() {
   const nextTheme = currentTheme === "dark" ? "light" : "dark";
   applyTheme(nextTheme);
+  showToast(`Switched to ${nextTheme} mode`, "info");
 }
 
 function handleCurrencyChange(e) {
@@ -771,6 +1076,7 @@ function handleCurrencyChange(e) {
   localStorage.setItem("expense_currency", currentCurrency);
   inputCurrencySymbol.textContent = currentCurrency;
   renderApp();
+  showToast(`Currency changed to ${currentCurrency}`, "info");
 }
 
 // --- LOCAL STORAGE PERSISTENCE ---
@@ -807,6 +1113,32 @@ function setupServiceWorkerAndNetwork() {
   updateNetworkStatus();
 }
 
+// --- KEYBOARD SHORTCUTS ---
+function setupKeyboardShortcuts() {
+  window.addEventListener("keydown", (e) => {
+    // Ctrl+N or Cmd+N: Focus Add Transaction input
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
+      e.preventDefault();
+      textInput.focus();
+      textInput.select();
+    }
+    // Ctrl+B or Cmd+B: Open Budget Modal
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+      e.preventDefault();
+      openBudgetConfigModal();
+    }
+    // Escape: Close open modals or cancel edit mode
+    if (e.key === "Escape") {
+      closeBudgetConfigModal();
+      closeInsightsModal();
+      backupModal.classList.add("hidden");
+      if (editingId !== null) {
+        resetForm();
+      }
+    }
+  });
+}
+
 // --- EVENT LISTENERS & INITIALIZATION ---
 function init() {
   dateInput.value = new Date().toISOString().split("T")[0];
@@ -817,23 +1149,47 @@ function init() {
   setFormType("expense");
   populateFilterCategories();
 
-  // Bind Form Events
+  // Form Events
   transactionForm.addEventListener("submit", handleFormSubmit);
   cancelEditBtn.addEventListener("click", resetForm);
   typeExpenseBtn.addEventListener("click", () => setFormType("expense"));
   typeIncomeBtn.addEventListener("click", () => setFormType("income"));
 
-  // Bind Header Controls
+  // Header Controls
   currencySelect.addEventListener("change", handleCurrencyChange);
   themeToggleBtn.addEventListener("click", toggleTheme);
 
-  // Bind Search & Filters
+  // Search, Filters & Date Presets
   searchInput.addEventListener("input", renderTransactionsList);
   filterTypeSelect.addEventListener("change", renderTransactionsList);
   filterCategorySelect.addEventListener("change", renderTransactionsList);
   sortBySelect.addEventListener("change", renderTransactionsList);
 
-  // Bind Export & Clear All
+  datePresetPills.forEach(pill => {
+    pill.addEventListener("click", () => {
+      datePresetPills.forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      activeDatePreset = pill.getAttribute("data-range");
+      renderTransactionsList();
+    });
+  });
+
+  // Chart Tab Toggles
+  chartTabCategory.addEventListener("click", () => {
+    chartTabCategory.classList.add("active");
+    chartTabCashflow.classList.remove("active");
+    activeChartTab = "category";
+    updateChart();
+  });
+
+  chartTabCashflow.addEventListener("click", () => {
+    chartTabCashflow.classList.add("active");
+    chartTabCategory.classList.remove("active");
+    activeChartTab = "cashflow";
+    updateChart();
+  });
+
+  // Export & Clear All
   exportCsvBtn.addEventListener("click", exportToCSV);
   clearAllBtn.addEventListener("click", clearAllTransactions);
 
@@ -844,6 +1200,11 @@ function init() {
   cancelBudgetBtn.addEventListener("click", closeBudgetConfigModal);
   budgetConfigForm.addEventListener("submit", saveBudgets);
 
+  // Financial Insights Modal
+  openInsightsBtn.addEventListener("click", openInsightsModal);
+  closeInsightsModalBtn.addEventListener("click", closeInsightsModal);
+  closeInsightsActionBtn.addEventListener("click", closeInsightsModal);
+
   // Backup & Restore Modals
   openBackupBtn.addEventListener("click", () => backupModal.classList.remove("hidden"));
   closeBackupModalBtn.addEventListener("click", () => backupModal.classList.add("hidden"));
@@ -851,17 +1212,19 @@ function init() {
   jsonFileInput.addEventListener("change", handleJsonFileSelect);
   restoreJsonBtn.addEventListener("click", executeRestore);
 
-  // Close modals on backdrop click
+  // Backdrop dismissal
   window.addEventListener("click", (e) => {
     if (e.target === budgetModal) closeBudgetConfigModal();
+    if (e.target === insightsModal) closeInsightsModal();
     if (e.target === backupModal) backupModal.classList.add("hidden");
   });
 
   setupServiceWorkerAndNetwork();
+  setupKeyboardShortcuts();
   renderApp();
 }
 
-// Expose functions for inline attributes
+// Expose functions for inline HTML attributes
 window.startEditTransaction = startEditTransaction;
 window.removeTransaction = removeTransaction;
 window.openBudgetConfigModal = openBudgetConfigModal;
