@@ -17,7 +17,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   
-  <!-- Chart.js for spending visualizer -->
+  <!-- Chart.js for spending & cash flow visualizers -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
@@ -27,6 +27,9 @@
     <span>📡 Working in Offline Mode (Changes saved locally)</span>
   </div>
 
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
   <div class="app-layout">
     <!-- Top Header Navigation -->
     <header class="app-header">
@@ -34,14 +37,19 @@
         <div class="brand-icon">💰</div>
         <div>
           <h1>Smart Expense Tracker</h1>
-          <p class="subtitle">Budget manager, analytics & cash flow manager</p>
+          <p class="subtitle">Budget manager, cash flow & financial runway analytics</p>
         </div>
       </div>
 
       <div class="header-actions">
         <!-- Budget Manager Modal Trigger -->
-        <button id="openBudgetBtn" class="btn-action-header" title="Manage Monthly Budgets">
+        <button id="openBudgetBtn" class="btn-action-header" title="Manage Monthly Budgets (Ctrl+B)">
           🎯 <span class="btn-text">Budgets</span>
+        </button>
+
+        <!-- Financial Insights Modal Trigger -->
+        <button id="openInsightsBtn" class="btn-action-header" title="View Financial Runway & Insights">
+          💡 <span class="btn-text">Insights</span>
         </button>
 
         <!-- Backup & Restore Modal Trigger -->
@@ -102,11 +110,21 @@
         <h2 class="stat-value text-expense" id="expense">$0.00</h2>
         <span class="stat-subtext" id="expenseCount">0 transactions</span>
       </div>
+
+      <!-- Financial Health & Runway Stat Card -->
+      <div class="stat-card runway-card">
+        <div class="stat-header">
+          <span class="stat-label">Financial Runway</span>
+          <span class="stat-icon-pill runway-pill">⏱️</span>
+        </div>
+        <h2 class="stat-value text-runway" id="runwayValue">--</h2>
+        <span class="stat-subtext" id="runwaySubtext">Based on monthly burn</span>
+      </div>
     </section>
 
     <!-- Main Content Grid -->
     <div class="main-grid">
-      <!-- Left Column: Add/Edit Form, Budgets & Chart -->
+      <!-- Left Column: Add/Edit Form, Budgets & Dual Analytics -->
       <div class="column-left">
         <!-- Add / Edit Form Card -->
         <div class="card form-card">
@@ -128,7 +146,7 @@
 
             <!-- Title / Description -->
             <div class="form-group">
-              <label for="text">Description / Title</label>
+              <label for="text">Description / Title <span class="shortcut-hint">(Ctrl+N)</span></label>
               <input type="text" id="text" placeholder="e.g. Grocery shopping, Salary, Freelance..." required maxlength="60">
             </div>
 
@@ -183,16 +201,19 @@
           </div>
         </div>
 
-        <!-- Expense Breakdown Chart Card -->
+        <!-- Dual Analytics Visualizer Card (Doughnut vs 6-Month Cash Flow Trend) -->
         <div class="card chart-card">
           <div class="card-header">
-            <h3>Expense Breakdown</h3>
-            <span class="card-subtext" id="chartPeriod">By Category</span>
+            <h3>Visual Analytics</h3>
+            <div class="chart-tab-group">
+              <button type="button" id="chartTabCategory" class="chart-tab-btn active">🍩 Category</button>
+              <button type="button" id="chartTabCashflow" class="chart-tab-btn">📊 6-Mo Trend</button>
+            </div>
           </div>
           <div class="chart-container">
             <canvas id="categoryChart"></canvas>
             <div id="chartPlaceholder" class="chart-empty-state">
-              <p>Add some expenses to see visual breakdown</p>
+              <p>Add transactions to view analytical insights</p>
             </div>
           </div>
         </div>
@@ -216,11 +237,19 @@
             </div>
           </div>
 
+          <!-- Date Preset Quick Filters -->
+          <div class="date-preset-pills">
+            <button type="button" class="preset-pill active" data-range="all">All Time</button>
+            <button type="button" class="preset-pill" data-range="this-month">This Month</button>
+            <button type="button" class="preset-pill" data-range="last-month">Last Month</button>
+            <button type="button" class="preset-pill" data-range="this-year">This Year</button>
+          </div>
+
           <!-- Filters & Search Toolbar -->
           <div class="filter-toolbar">
             <div class="search-box">
               <span class="search-icon">🔍</span>
-              <input type="text" id="searchInput" placeholder="Search by description...">
+              <input type="text" id="searchInput" placeholder="Search by description or category...">
             </div>
 
             <div class="filter-controls">
@@ -282,6 +311,48 @@
           <button type="submit" class="btn btn-primary">Save Budgets</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       MODAL: FINANCIAL HEALTH & INSIGHTS
+       ======================================================== -->
+  <div id="insightsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="insightsModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="insightsModalTitle">💡 Financial Health & Insights</h3>
+        <button class="modal-close-btn" id="closeInsightsModalBtn" aria-label="Close Modal">&times;</button>
+      </div>
+
+      <div class="insights-summary-grid">
+        <div class="insight-box">
+          <span class="insight-label">Average Monthly Burn</span>
+          <h4 id="insightAvgBurn">$0.00</h4>
+        </div>
+        <div class="insight-box">
+          <span class="insight-label">Estimated Runway</span>
+          <h4 id="insightRunwayMonths">0 Months</h4>
+        </div>
+        <div class="insight-box">
+          <span class="insight-label">Top Expense Category</span>
+          <h4 id="insightTopCategory">None</h4>
+        </div>
+        <div class="insight-box">
+          <span class="insight-label">Net Savings Rate</span>
+          <h4 id="insightSavingsRate">0%</h4>
+        </div>
+      </div>
+
+      <div class="insights-tips-container">
+        <h4>Actionable Recommendations</h4>
+        <div id="insightRecommendations" class="recommendations-list">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-primary" id="closeInsightsActionBtn">Got It</button>
+      </div>
     </div>
   </div>
 
