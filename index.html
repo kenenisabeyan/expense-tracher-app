@@ -1,37 +1,227 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Expense Tracker</title>
+  <title>Smart Expense Tracker & Budget Manager</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <!-- Chart.js for visual spending insights -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
-
-  <div class="container">
-    <h1>Expense Tracker</h1>
-
-    <h2 id="balance">Balance: $0</h2>
-
-    <div class="summary">
-      <div class="income">
-        <h3>Income</h3>
-        <p id="income">0</p>
+  <div class="app-layout">
+    <!-- Top Header Navigation -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">💰</div>
+        <div>
+          <h1>Smart Expense Tracker</h1>
+          <p class="subtitle">Track, analyze, and manage your cash flow</p>
+        </div>
       </div>
-      <div class="expense">
-        <h3>Expense</h3>
-        <p id="expense">0</p>
+
+      <div class="header-actions">
+        <!-- Currency Selector -->
+        <div class="currency-wrapper">
+          <label for="currencySelect" class="sr-only">Currency</label>
+          <select id="currencySelect" title="Select Currency">
+            <option value="$" selected>USD ($)</option>
+            <option value="€">EUR (€)</option>
+            <option value="£">GBP (£)</option>
+            <option value="ETB">ETB (Br)</option>
+            <option value="₹">INR (₹)</option>
+            <option value="¥">JPY (¥)</option>
+            <option value="CAD $">CAD ($)</option>
+            <option value="A$">AUD ($)</option>
+          </select>
+        </div>
+
+        <!-- Dark / Light Theme Toggle -->
+        <button id="themeToggle" class="btn-icon" title="Toggle Dark/Light Mode" aria-label="Toggle Theme">
+          <span class="theme-icon" id="themeIcon">🌙</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Overview Stats Cards -->
+    <section class="stats-grid">
+      <div class="stat-card total-balance-card">
+        <div class="stat-header">
+          <span class="stat-label">Net Balance</span>
+          <span class="badge balance-badge" id="balanceBadge">Healthy</span>
+        </div>
+        <h2 class="stat-value" id="balance">$0.00</h2>
+        <div class="balance-meta">
+          <span>Savings Rate: </span>
+          <strong id="savingsRate">0%</strong>
+        </div>
+      </div>
+
+      <div class="stat-card income-card">
+        <div class="stat-header">
+          <span class="stat-label">Total Income</span>
+          <span class="stat-icon-pill income-pill">↗</span>
+        </div>
+        <h2 class="stat-value text-income" id="income">$0.00</h2>
+        <span class="stat-subtext" id="incomeCount">0 transactions</span>
+      </div>
+
+      <div class="stat-card expense-card">
+        <div class="stat-header">
+          <span class="stat-label">Total Expenses</span>
+          <span class="stat-icon-pill expense-pill">↘</span>
+        </div>
+        <h2 class="stat-value text-expense" id="expense">$0.00</h2>
+        <span class="stat-subtext" id="expenseCount">0 transactions</span>
+      </div>
+    </section>
+
+    <!-- Main Content Area -->
+    <div class="main-grid">
+      <!-- Left Column: Add / Edit Form & Analytics -->
+      <div class="column-left">
+        <!-- Add / Edit Form Card -->
+        <div class="card form-card">
+          <div class="card-header">
+            <h3 id="formTitle">Add New Transaction</h3>
+            <span id="editModeNotice" class="edit-badge hidden">Editing</span>
+          </div>
+
+          <form id="transactionForm">
+            <!-- Type Selector: Income / Expense -->
+            <div class="type-toggle-group">
+              <button type="button" class="type-btn active" id="typeExpenseBtn" data-type="expense">
+                Expense 📉
+              </button>
+              <button type="button" class="type-btn" id="typeIncomeBtn" data-type="income">
+                Income 📈
+              </button>
+            </div>
+
+            <!-- Title / Description -->
+            <div class="form-group">
+              <label for="text">Description / Title</label>
+              <input type="text" id="text" placeholder="e.g. Grocery shopping, Salary, Freelance..." required maxlength="60">
+            </div>
+
+            <!-- Amount & Category Grid -->
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="amount">Amount</label>
+                <div class="input-with-symbol">
+                  <span class="currency-symbol" id="inputCurrencySymbol">$</span>
+                  <input type="number" id="amount" placeholder="0.00" step="0.01" min="0.01" required>
+                </div>
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="category">Category</label>
+                <select id="category" required>
+                  <!-- Populated dynamically based on Income / Expense -->
+                </select>
+              </div>
+            </div>
+
+            <!-- Date -->
+            <div class="form-group">
+              <label for="date">Date</label>
+              <input type="date" id="date" required>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="form-actions">
+              <button type="submit" id="submitBtn" class="btn btn-primary">
+                <span id="submitBtnText">Add Transaction</span>
+              </button>
+              <button type="button" id="cancelEditBtn" class="btn btn-secondary hidden">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Expense Breakdown Chart Card -->
+        <div class="card chart-card">
+          <div class="card-header">
+            <h3>Expense Breakdown</h3>
+            <span class="card-subtext" id="chartPeriod">By Category</span>
+          </div>
+          <div class="chart-container">
+            <canvas id="categoryChart"></canvas>
+            <div id="chartPlaceholder" class="chart-empty-state">
+              <p>Add some expenses to see visual breakdown</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Column: Transactions History, Filter, Search, Export -->
+      <div class="column-right">
+        <div class="card history-card">
+          <div class="card-header">
+            <div>
+              <h3>Transaction History</h3>
+              <p class="history-count" id="historyCount">Showing 0 transactions</p>
+            </div>
+            <div class="quick-tools">
+              <button id="exportCsvBtn" class="btn-sm btn-outline" title="Export transactions to CSV">
+                📥 Export CSV
+              </button>
+              <button id="clearAllBtn" class="btn-sm btn-danger-outline" title="Clear all records">
+                🗑️ Clear All
+              </button>
+            </div>
+          </div>
+
+          <!-- Filters & Search Toolbar -->
+          <div class="filter-toolbar">
+            <div class="search-box">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="searchInput" placeholder="Search by description...">
+            </div>
+
+            <div class="filter-controls">
+              <!-- Filter by Type -->
+              <select id="filterType" title="Filter by Type">
+                <option value="all">All Types</option>
+                <option value="income">Income Only</option>
+                <option value="expense">Expense Only</option>
+              </select>
+
+              <!-- Filter by Category -->
+              <select id="filterCategory" title="Filter by Category">
+                <option value="all">All Categories</option>
+              </select>
+
+              <!-- Sort Options -->
+              <select id="sortBy" title="Sort By">
+                <option value="date-desc">Newest Date</option>
+                <option value="date-asc">Oldest Date</option>
+                <option value="amount-desc">Highest Amount</option>
+                <option value="amount-asc">Lowest Amount</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Transaction List -->
+          <div class="list-wrapper">
+            <ul id="list" class="transactions-list"></ul>
+            
+            <!-- Empty State Display -->
+            <div id="emptyState" class="empty-state hidden">
+              <div class="empty-icon">📭</div>
+              <h4>No transactions found</h4>
+              <p>Add a new transaction or adjust your filters above.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-
-    <h3>Add Transaction</h3>
-    <input type="text" id="text" placeholder="Description">
-    <input type="number" id="amount" placeholder="Amount (+income, -expense)">
-    <button id="addBtn">Add Transaction</button>
-
-    <ul id="list"></ul>
   </div>
 
   <script src="script.js"></script>
