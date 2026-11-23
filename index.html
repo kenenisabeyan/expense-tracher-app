@@ -844,6 +844,20 @@
 
         <hr class="modal-divider">
 
+        <!-- Automated Categorization Rules Engine -->
+        <div class="settings-section">
+          <div class="card-header" style="padding:0; margin-bottom:10px;">
+            <div>
+              <h3>⚡ Automated Categorization & Tagging Rules</h3>
+              <p class="setting-desc">Auto-assign categories and tags based on description keyword matches during entry, smart add, or bank CSV import.</p>
+            </div>
+            <button class="btn-sm btn-outline" id="openNewRuleModalBtn">+ Add Rule</button>
+          </div>
+          <div id="rulesListContainer" class="rules-list-container"></div>
+        </div>
+
+        <hr class="modal-divider">
+
         <!-- Backup & Portability -->
         <div class="settings-section">
           <h3>Backup & Data Portability</h3>
@@ -873,6 +887,42 @@
             </label>
           </div>
           <button id="settingsRestoreBtn" class="btn btn-secondary" disabled>📥 Restore Database</button>
+        </div>
+
+        <hr class="modal-divider">
+
+        <!-- Encrypted Cold-Storage Vault -->
+        <div class="settings-section">
+          <h3>🔐 Military-Grade Encrypted Vault (AES-256-GCM)</h3>
+          <p class="setting-desc">Zero-knowledge cold storage backup. Encrypted with a 256-bit symmetric key derived via PBKDF2 (100,000 iterations of SHA-256) from your master passphrase.</p>
+          <div class="settings-actions-group">
+            <button type="button" id="settingsExportEncryptedBtn" class="btn btn-primary">🔒 Export Encrypted Vault (.enc.json)</button>
+            <button type="button" id="settingsRestoreEncryptedBtn" class="btn btn-secondary">🔓 Restore Encrypted Vault</button>
+            <input type="file" id="settingsEncryptedFileInput" accept=".json,.enc.json" class="file-input hidden">
+          </div>
+        </div>
+
+        <hr class="modal-divider">
+
+        <!-- Storage Quota & Health Diagnostics -->
+        <div class="settings-section">
+          <h3>💾 Local Storage Quota & Diagnostics</h3>
+          <p class="setting-desc">Real-time browser sandbox storage allocation and database health index.</p>
+          <div class="storage-meter-box">
+            <div class="storage-meter-header">
+              <span id="storageUsageLabel">Storage Used: Calculating...</span>
+              <span id="storagePercentLabel">0%</span>
+            </div>
+            <div class="storage-meter-track">
+              <div id="storageMeterBar" class="storage-meter-fill" style="width: 0%;"></div>
+            </div>
+            <div class="storage-breakdown" id="storageBreakdownText">
+              <span>Ledger: 0 items</span> • <span>Accounts: 0</span> • <span>Receipts: 0</span>
+            </div>
+          </div>
+          <div style="margin-top: 14px;">
+            <button type="button" id="optimizeDatabaseBtn" class="btn-sm btn-outline">🧹 Run Storage Optimization & Clear Bloat</button>
+          </div>
         </div>
 
         <hr class="modal-divider">
