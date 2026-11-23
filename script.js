@@ -3212,6 +3212,10 @@ function setupServiceWorkerAndNetwork() {
 function setupShortcuts() {
   window.addEventListener("keydown", (e) => {
     if (isLocked) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      openCommandPalette();
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
       e.preventDefault();
       switchView("dashboard");
@@ -3223,6 +3227,8 @@ function setupShortcuts() {
       openBudgetConfigModal();
     }
     if (e.key === "Escape") {
+      closeCommandPalette();
+      if (ruleModal) ruleModal.classList.add("hidden");
       closeBudgetConfigModal();
       goalModal.classList.add("hidden");
       subModal.classList.add("hidden");
@@ -3258,7 +3264,10 @@ function init() {
     tab.addEventListener("click", () => switchView(tab.getAttribute("data-view")));
   });
 
-  // Header quick buttons
+  // Header buttons
+  if (headerCmdPaletteBtn) headerCmdPaletteBtn.addEventListener("click", openCommandPalette);
+  if (closeCmdPaletteBtn) closeCmdPaletteBtn.addEventListener("click", closeCommandPalette);
+
   headerQuickAddBtn.addEventListener("click", () => {
     switchView("dashboard");
     textInput.focus();
@@ -3289,6 +3298,13 @@ function init() {
   addSplitRowBtn.addEventListener("click", () => addSplitRow(null, ""));
   amountInput.addEventListener("input", updateSplitCalculations);
 
+  // Tax Deductible Form Controls
+  if (taxDeductibleCheckbox) {
+    taxDeductibleCheckbox.addEventListener("change", () => {
+      if (taxCategoryGroup) taxCategoryGroup.classList.toggle("hidden", !taxDeductibleCheckbox.checked);
+    });
+  }
+
   receiptFileInput.addEventListener("change", handleReceiptUpload);
   removeReceiptBtn.addEventListener("click", clearReceiptPreview);
 
@@ -3306,16 +3322,23 @@ function init() {
   });
 
   // Accounts Controls
-  openNewAccountModalBtn.addEventListener("click", () => accountModal.classList.remove("hidden"));
+  openNewAccountModalBtn.addEventListener("click", () => {
+    if (liabilityFieldsRow) liabilityFieldsRow.classList.toggle("hidden", accTypeSelect.value !== "credit");
+    accountModal.classList.remove("hidden");
+  });
   closeAccountModalBtn.addEventListener("click", () => accountModal.classList.add("hidden"));
   cancelAccountBtn.addEventListener("click", () => accountModal.classList.add("hidden"));
   accountForm.addEventListener("submit", handleAccountSubmit);
+  accTypeSelect.addEventListener("change", () => {
+    if (liabilityFieldsRow) liabilityFieldsRow.classList.toggle("hidden", accTypeSelect.value !== "credit");
+  });
 
   // Ledger Controls & Pagination
   searchInput.addEventListener("input", () => { currentPage = 1; renderLedger(); });
   filterTypeSelect.addEventListener("change", () => { currentPage = 1; renderLedger(); });
   filterAccountSelect.addEventListener("change", () => { currentPage = 1; renderLedger(); });
   filterCategorySelect.addEventListener("change", () => { currentPage = 1; renderLedger(); });
+  if (filterTaxSelect) filterTaxSelect.addEventListener("change", () => { currentPage = 1; renderLedger(); });
   sortBySelect.addEventListener("change", () => { currentPage = 1; renderLedger(); });
   selectAllCheckbox.addEventListener("change", handleSelectAll);
   bulkDeleteBtn.addEventListener("click", handleBulkDelete);
@@ -3351,12 +3374,13 @@ function init() {
     });
   });
 
-  // Currency Converter Modal Controls
+  // Currency Converter Controls
   closeConvertModalBtn.addEventListener("click", () => convertModal.classList.add("hidden"));
   closeConvertActionBtn.addEventListener("click", () => convertModal.classList.add("hidden"));
   convertForeignAmount.addEventListener("input", updateConvertCalculation);
   convertExchangeRate.addEventListener("input", updateConvertCalculation);
   applyConvertedToFormBtn.addEventListener("click", applyConvertedToTransaction);
+  if (syncLiveRatesBtn) syncLiveRatesBtn.addEventListener("click", syncLiveExchangeRates);
 
   // Budgets & Goals Controls
   openBudgetModalBtn.addEventListener("click", openBudgetConfigModal);
@@ -3381,8 +3405,24 @@ function init() {
 
   // Forecast simulator inputs
   [forecastInitial, forecastMonthly, forecastRate, forecastYears].forEach(el => {
-    el.addEventListener("input", updateForecastSimulator);
+    if (el) el.addEventListener("input", updateForecastSimulator);
   });
+
+  // Tax Center Controls
+  if (taxRateSelect) taxRateSelect.addEventListener("change", renderTaxCenter);
+  if (exportTaxScheduleBtn) exportTaxScheduleBtn.addEventListener("click", exportTaxScheduleCSV);
+
+  // Debt Payoff Optimizer Controls
+  if (extraDebtPayment) extraDebtPayment.addEventListener("input", renderDebtPayoffPlanner);
+  document.querySelectorAll('input[name="debtStrategy"]').forEach(r => {
+    r.addEventListener("change", renderDebtPayoffPlanner);
+  });
+
+  // Automation Rules Controls
+  if (openNewRuleModalBtn) openNewRuleModalBtn.addEventListener("click", openRuleModal);
+  if (closeRuleModalBtn) closeRuleModalBtn.addEventListener("click", () => ruleModal.classList.add("hidden"));
+  if (cancelRuleBtn) cancelRuleBtn.addEventListener("click", () => ruleModal.classList.add("hidden"));
+  if (ruleForm) ruleForm.addEventListener("submit", handleRuleSubmit);
 
   // Settings Controls
   settingsCurrencySelect.addEventListener("change", (e) => handleCurrencyChange(e.target.value));
@@ -3400,6 +3440,38 @@ function init() {
   settingsRestoreBtn.addEventListener("click", executeRestore);
   settingsWipeBtn.addEventListener("click", wipeDatabase);
 
+  // Encrypted Vault Controls
+  if (settingsExportEncryptedBtn) settingsExportEncryptedBtn.addEventListener("click", exportEncryptedVault);
+  if (settingsRestoreEncryptedBtn) settingsRestoreEncryptedBtn.addEventListener("click", () => settingsEncryptedFileInput.click());
+  if (settingsEncryptedFileInput) settingsEncryptedFileInput.addEventListener("change", handleRestoreEncryptedFile);
+
+  // Storage Optimization Controls
+  if (optimizeDatabaseBtn) optimizeDatabaseBtn.addEventListener("click", optimizeDatabase);
+
+  // Biometric Unlock & Registration
+  if (toggleBiometricBtn) toggleBiometricBtn.addEventListener("click", toggleBiometricRegistration);
+  if (biometricUnlockBtn) biometricUnlockBtn.addEventListener("click", authenticateWithBiometrics);
+
+  // Command Palette Keyboard Handling
+  if (cmdPaletteInput) {
+    cmdPaletteInput.addEventListener("input", (e) => filterCommands(e.target.value));
+    cmdPaletteInput.addEventListener("keydown", (e) => {
+      if (filteredCommands.length === 0) return;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        cmdPaletteSelectedIndex = (cmdPaletteSelectedIndex + 1) % filteredCommands.length;
+        renderCommandResults();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        cmdPaletteSelectedIndex = (cmdPaletteSelectedIndex - 1 + filteredCommands.length) % filteredCommands.length;
+        renderCommandResults();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        executeSelectedCommand();
+      }
+    });
+  }
+
   // Receipt Modal
   closeReceiptModalBtn.addEventListener("click", () => receiptModal.classList.add("hidden"));
 
@@ -3412,14 +3484,24 @@ function init() {
     if (e.target === receiptModal) receiptModal.classList.add("hidden");
     if (e.target === convertModal) convertModal.classList.add("hidden");
     if (e.target === csvImportModal) csvImportModal.classList.add("hidden");
+    if (e.target === cmdPaletteModal) closeCommandPalette();
+    if (e.target === ruleModal) ruleModal.classList.add("hidden");
   });
 
   setupPinListeners();
   setupServiceWorkerAndNetwork();
   setupShortcuts();
+  updateBiometricUI();
+  updateStorageDiagnostics();
 
-  if (hashedPin) lockApp();
-  else pinLockOverlay.classList.add("hidden");
+  if (hashedPin) {
+    lockApp();
+    if (localStorage.getItem("expense_biometric_id")) {
+      setTimeout(authenticateWithBiometrics, 300);
+    }
+  } else {
+    pinLockOverlay.classList.add("hidden");
+  }
 
   renderApp();
 }
@@ -3435,5 +3517,6 @@ window.deleteAccount = deleteAccount;
 window.promptAdjustBalance = promptAdjustBalance;
 window.openReceiptViewer = openReceiptViewer;
 window.deleteCustomCategory = deleteCustomCategory;
+window.deleteRule = deleteRule;
 
 init();

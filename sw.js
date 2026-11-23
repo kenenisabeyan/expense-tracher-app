@@ -1,4 +1,4 @@
-const CACHE_NAME = 'expense-tracker-v2';
+const CACHE_NAME = 'expense-tracker-v3';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -12,7 +12,8 @@ const STATIC_ASSETS = [
 const EXTERNAL_HOSTS = [
   'cdn.jsdelivr.net',
   'fonts.googleapis.com',
-  'fonts.gstatic.com'
+  'fonts.gstatic.com',
+  'open.er-api.com'
 ];
 
 // Install Event: Pre-cache core shell
