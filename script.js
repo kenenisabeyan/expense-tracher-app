@@ -1,15 +1,9 @@
 /**
- * SMART EXPENSE TRACKER PRO - FINANCIAL SUITE
- * Multi-View Architecture:
- * 1. Dashboard (Overview, KPIs, Quick Add, Budget Snapshot, Charts, Recent Activity)
- * 2. Transactions Ledger (Full Tabular View, Bulk Select/Delete, Search, Date Range, Print)
- * 3. Budgets & Savings Goals (Category Limits + Savings Milestones with Deposits)
- * 4. Subscriptions & Recurring Bills (Recurrence tracker + Auto-process due bills)
- * 5. In-Depth Analytics (Dual Canvas Visualizers + Financial Health / Runway heuristics)
- * 6. Settings & Data Sovereignty (Theme, Currency, JSON Backup/Restore, Danger Zone)
+ * SMART EXPENSE TRACKER ULTIMATE - FINANCIAL SUITE
+ * Multi-Account, Net Worth, Wealth Forecast, Security PIN, Receipts & Tags
  */
 
-// --- CATEGORY DEFINITIONS ---
+// --- CONFIGURATION & CATEGORY DEFINITIONS ---
 const CATEGORIES = {
   expense: [
     { id: "Food & Drinks", label: "Food & Dining", icon: "🍔" },
@@ -32,6 +26,13 @@ const CATEGORIES = {
   ]
 };
 
+const DEFAULT_ACCOUNTS = [
+  { id: "checking", name: "Main Checking", type: "checking", balance: 3450.00, icon: "💳" },
+  { id: "savings", name: "High-Yield Savings", type: "savings", balance: 12800.00, icon: "🏦" },
+  { id: "credit", name: "Credit Card", type: "credit", balance: -450.00, icon: "💳" },
+  { id: "cash", name: "Cash Wallet", type: "cash", balance: 120.00, icon: "💵" }
+];
+
 const DEFAULT_BUDGETS = {
   "Food & Drinks": 300,
   "Transportation": 120,
@@ -41,8 +42,8 @@ const DEFAULT_BUDGETS = {
 };
 
 const DEFAULT_GOALS = [
-  { id: 1, name: "Emergency Buffer", target: 3000, saved: 1200, date: "2026-12-31" },
-  { id: 2, name: "Holiday Travel", target: 800, saved: 450, date: "2026-12-15" }
+  { id: 1, name: "Emergency Buffer", target: 5000, saved: 2400, date: "2026-12-31" },
+  { id: 2, name: "Holiday Travel", target: 1200, saved: 650, date: "2026-12-15" }
 ];
 
 const DEFAULT_SUBS = [
@@ -50,27 +51,102 @@ const DEFAULT_SUBS = [
   { id: 2, name: "Gym Membership", amount: 45.00, frequency: "monthly", category: "Healthcare", nextDate: "2026-12-01" }
 ];
 
+// --- WEB AUDIO API SYNTHESIZER ---
+class SoundEffects {
+  constructor() {
+    this.ctx = null;
+  }
+  init() {
+    if (!this.ctx && (window.AudioContext || window.webkitAudioContext)) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AudioCtx();
+    }
+  }
+  play(type) {
+    if (localStorage.getItem("expense_audio") === "false") return;
+    try {
+      this.init();
+      if (!this.ctx) return;
+      if (this.ctx.state === "suspended") this.ctx.resume();
+
+      const t = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+
+      if (type === "success") {
+        // C5 -> E5 -> G5 pleasant arpeggio
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(523.25, t);
+        osc.frequency.setValueAtTime(659.25, t + 0.08);
+        osc.frequency.setValueAtTime(783.99, t + 0.16);
+        gain.gain.setValueAtTime(0.12, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        osc.start(t);
+        osc.stop(t + 0.35);
+      } else if (type === "click") {
+        // Subtle soft click
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(800, t);
+        gain.gain.setValueAtTime(0.04, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+        osc.start(t);
+        osc.stop(t + 0.04);
+      } else if (type === "delete") {
+        // Gentle descending tone
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(380, t);
+        osc.frequency.exponentialRampToValueAtTime(220, t + 0.15);
+        gain.gain.setValueAtTime(0.1, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+        osc.start(t);
+        osc.stop(t + 0.18);
+      } else if (type === "error") {
+        // Low sawtooth alert
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(140, t);
+        gain.gain.setValueAtTime(0.1, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        osc.start(t);
+        osc.stop(t + 0.2);
+      }
+    } catch (_) {}
+  }
+}
+const sfx = new SoundEffects();
+
 // --- APPLICATION STATE ---
 let activeView = "dashboard";
 let currentType = "expense";
 let editingId = null;
 let currentCurrency = localStorage.getItem("expense_currency") || "$";
 let currentTheme = localStorage.getItem("expense_theme") || "light";
+
+let accounts = JSON.parse(localStorage.getItem("expense_accounts")) || DEFAULT_ACCOUNTS;
 let budgets = JSON.parse(localStorage.getItem("expense_budgets")) || DEFAULT_BUDGETS;
 let savingsGoals = JSON.parse(localStorage.getItem("expense_goals")) || DEFAULT_GOALS;
 let subscriptions = JSON.parse(localStorage.getItem("expense_subs")) || DEFAULT_SUBS;
 
 let activeChartTab = "category";
 let activeDatePreset = "all";
+let activeTagFilter = "all";
 let selectedTransactionIds = new Set();
 let pendingImportData = null;
+let currentReceiptBase64 = null;
+
+// Security PIN state
+let appPin = localStorage.getItem("expense_pin") || null;
+let enteredPin = "";
+let isLocked = !!appPin;
 
 // Chart Instances
 let dashChartInstance = null;
+let forecastChartInstance = null;
 let analyticsCashFlowInstance = null;
 let analyticsCategoryInstance = null;
 
-// Transactions State
+// Load and migrate transactions
 let rawTransactions = JSON.parse(localStorage.getItem("transactions")) || [];
 let transactions = rawTransactions.map(t => ({
   id: t.id || Date.now() + Math.random(),
@@ -78,6 +154,10 @@ let transactions = rawTransactions.map(t => ({
   amount: Math.abs(t.amount),
   type: t.type || (t.amount < 0 ? "expense" : "income"),
   category: t.category || (t.type === "income" ? "Salary" : "Food & Drinks"),
+  account: t.account || "checking",
+  targetAccount: t.targetAccount || null,
+  tags: Array.isArray(t.tags) ? t.tags : (t.tags ? String(t.tags).split(",").map(s => s.trim().replace(/^#/, "")).filter(Boolean) : []),
+  receipt: t.receipt || null,
   date: t.date || new Date().toISOString().split("T")[0]
 }));
 
@@ -87,8 +167,20 @@ const offlineBanner = document.getElementById("offlineBanner");
 const currencySelect = document.getElementById("currencySelect");
 const themeToggleBtn = document.getElementById("themeToggle");
 const themeIcon = document.getElementById("themeIcon");
+const headerLockBtn = document.getElementById("headerLockBtn");
 const navTabs = document.querySelectorAll(".nav-tab");
 const viewContainers = document.querySelectorAll(".view-container");
+
+// PIN Lock elements
+const pinLockOverlay = document.getElementById("pinLockOverlay");
+const pinDots = [document.getElementById("dot1"), document.getElementById("dot2"), document.getElementById("dot3"), document.getElementById("dot4")];
+const pinKeypad = document.querySelector(".pin-keypad");
+const pinClearBtn = document.getElementById("pinClearBtn");
+const pinDeleteBtn = document.getElementById("pinDeleteBtn");
+const pinErrorMsg = document.getElementById("pinErrorMsg");
+const setPinBtn = document.getElementById("setPinBtn");
+const removePinBtn = document.getElementById("removePinBtn");
+const pinSettingStatusText = document.getElementById("pinSettingStatusText");
 
 // Dashboard Elements
 const dashBalance = document.getElementById("dashBalance");
@@ -101,17 +193,30 @@ const dashExpenseCount = document.getElementById("dashExpenseCount");
 const dashRunway = document.getElementById("dashRunway");
 const dashRunwaySubtext = document.getElementById("dashRunwaySubtext");
 
+const smartInput = document.getElementById("smartInput");
+const smartAddBtn = document.getElementById("smartAddBtn");
+
 const transactionForm = document.getElementById("transactionForm");
 const textInput = document.getElementById("text");
 const amountInput = document.getElementById("amount");
+const accountSelect = document.getElementById("accountSelect");
+const targetAccountGroup = document.getElementById("targetAccountGroup");
+const targetAccountSelect = document.getElementById("targetAccountSelect");
+const categoryGroup = document.getElementById("categoryGroup");
 const categorySelect = document.getElementById("category");
 const dateInput = document.getElementById("date");
+const tagsInput = document.getElementById("tagsInput");
+const receiptFileInput = document.getElementById("receiptFileInput");
+const receiptPreviewContainer = document.getElementById("receiptPreviewContainer");
+const receiptPreviewImg = document.getElementById("receiptPreviewImg");
+const removeReceiptBtn = document.getElementById("removeReceiptBtn");
 const submitBtnText = document.getElementById("submitBtnText");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
 const formTitle = document.getElementById("formTitle");
 const editModeNotice = document.getElementById("editModeNotice");
 const typeExpenseBtn = document.getElementById("typeExpenseBtn");
 const typeIncomeBtn = document.getElementById("typeIncomeBtn");
+const typeTransferBtn = document.getElementById("typeTransferBtn");
 const inputCurrencySymbol = document.getElementById("inputCurrencySymbol");
 
 const dashBudgetProgressList = document.getElementById("dashBudgetProgressList");
@@ -123,6 +228,20 @@ const chartPlaceholder = document.getElementById("chartPlaceholder");
 const chartTabCategory = document.getElementById("chartTabCategory");
 const chartTabCashflow = document.getElementById("chartTabCashflow");
 
+// Accounts View Elements
+const netWorthDisplay = document.getElementById("netWorthDisplay");
+const totalAssetsDisplay = document.getElementById("totalAssetsDisplay");
+const totalLiabilitiesDisplay = document.getElementById("totalLiabilitiesDisplay");
+const accountsGrid = document.getElementById("accountsGrid");
+const openNewAccountModalBtn = document.getElementById("openNewAccountModalBtn");
+const accountModal = document.getElementById("accountModal");
+const closeAccountModalBtn = document.getElementById("closeAccountModalBtn");
+const cancelAccountBtn = document.getElementById("cancelAccountBtn");
+const accountForm = document.getElementById("accountForm");
+const accNameInput = document.getElementById("accName");
+const accTypeSelect = document.getElementById("accType");
+const accBalanceInput = document.getElementById("accBalance");
+
 // Ledger Elements
 const ledgerTableBody = document.getElementById("ledgerTableBody");
 const ledgerCountLabel = document.getElementById("ledgerCountLabel");
@@ -132,8 +251,10 @@ const selectedCountEl = document.getElementById("selectedCount");
 const ledgerEmptyState = document.getElementById("ledgerEmptyState");
 const searchInput = document.getElementById("searchInput");
 const filterTypeSelect = document.getElementById("filterType");
+const filterAccountSelect = document.getElementById("filterAccount");
 const filterCategorySelect = document.getElementById("filterCategory");
 const sortBySelect = document.getElementById("sortBy");
+const tagChipsContainer = document.getElementById("tagChipsContainer");
 const datePresetPills = document.querySelectorAll(".preset-pill");
 const ledgerPrintBtn = document.getElementById("ledgerPrintBtn");
 const exportCsvBtn = document.getElementById("exportCsvBtn");
@@ -175,7 +296,16 @@ const subFrequencyInput = document.getElementById("subFrequency");
 const subCategoryInput = document.getElementById("subCategory");
 const subNextDateInput = document.getElementById("subNextDate");
 
-// Analytics View Elements
+// Analytics & Forecast Elements
+const forecastInitial = document.getElementById("forecastInitial");
+const forecastMonthly = document.getElementById("forecastMonthly");
+const forecastRate = document.getElementById("forecastRate");
+const forecastYears = document.getElementById("forecastYears");
+const forecastTotalValue = document.getElementById("forecastTotalValue");
+const forecastTotalPrincipal = document.getElementById("forecastTotalPrincipal");
+const forecastTotalInterest = document.getElementById("forecastTotalInterest");
+const forecastChartCanvas = document.getElementById("forecastChart");
+
 const analyticsCashFlowCanvas = document.getElementById("analyticsCashFlowChart");
 const analyticsCategoryCanvas = document.getElementById("analyticsCategoryChart");
 const reportsAvgBurn = document.getElementById("reportsAvgBurn");
@@ -184,16 +314,22 @@ const reportsTopCategory = document.getElementById("reportsTopCategory");
 const reportsSavingsRate = document.getElementById("reportsSavingsRate");
 const reportsRecommendations = document.getElementById("reportsRecommendations");
 
-// Settings View Elements
+// Settings Elements
 const settingsCurrencySelect = document.getElementById("settingsCurrencySelect");
 const settingsThemeToggle = document.getElementById("settingsThemeToggle");
+const audioToggle = document.getElementById("audioToggle");
 const settingsExportJsonBtn = document.getElementById("settingsExportJsonBtn");
 const settingsExportCsvBtn = document.getElementById("settingsExportCsvBtn");
 const settingsJsonFileInput = document.getElementById("settingsJsonFileInput");
 const settingsRestoreBtn = document.getElementById("settingsRestoreBtn");
 const settingsWipeBtn = document.getElementById("settingsWipeBtn");
 
-// Quick Nav Buttons
+// Receipt Modal
+const receiptModal = document.getElementById("receiptModal");
+const closeReceiptModalBtn = document.getElementById("closeReceiptModalBtn");
+const receiptModalImg = document.getElementById("receiptModalImg");
+
+// Navigation shortcuts
 const headerQuickAddBtn = document.getElementById("headerQuickAddBtn");
 const goToBudgetsTabBtn = document.getElementById("goToBudgetsTabBtn");
 const goToLedgerBtn = document.getElementById("goToLedgerBtn");
@@ -227,6 +363,11 @@ function getCategoryMeta(categoryName, type) {
   return { id: categoryName, label: categoryName, icon: type === "income" ? "💵" : "📦" };
 }
 
+function getAccountMeta(accId) {
+  const acc = accounts.find(a => a.id === accId);
+  return acc || { id: accId, name: accId, icon: "💳" };
+}
+
 function showToast(message, type = "info", duration = 3000) {
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
@@ -245,8 +386,127 @@ function showToast(message, type = "info", duration = 3000) {
   }, duration);
 }
 
+// --- SECURITY PIN ENGINE ---
+function updatePinUI() {
+  pinDots.forEach((dot, idx) => {
+    dot.classList.toggle("filled", idx < enteredPin.length);
+  });
+}
+
+function checkPin() {
+  if (enteredPin === appPin) {
+    sfx.play("success");
+    isLocked = false;
+    pinLockOverlay.classList.add("hidden");
+    enteredPin = "";
+    updatePinUI();
+    pinErrorMsg.classList.add("hidden");
+    showToast("Unlocked successfully", "success");
+  } else {
+    sfx.play("error");
+    pinErrorMsg.classList.remove("hidden");
+    enteredPin = "";
+    updatePinUI();
+  }
+}
+
+function lockApp() {
+  if (!appPin) return;
+  sfx.play("click");
+  isLocked = true;
+  enteredPin = "";
+  updatePinUI();
+  pinErrorMsg.classList.add("hidden");
+  pinLockOverlay.classList.remove("hidden");
+}
+
+function handleKeypadPress(digit) {
+  sfx.play("click");
+  if (enteredPin.length < 4) {
+    enteredPin += digit;
+    updatePinUI();
+    if (enteredPin.length === 4) {
+      setTimeout(checkPin, 100);
+    }
+  }
+}
+
+function setupPinListeners() {
+  pinKeypad.querySelectorAll(".pin-key[data-digit]").forEach(btn => {
+    btn.addEventListener("click", () => handleKeypadPress(btn.getAttribute("data-digit")));
+  });
+
+  pinClearBtn.addEventListener("click", () => {
+    sfx.play("click");
+    enteredPin = "";
+    updatePinUI();
+  });
+
+  pinDeleteBtn.addEventListener("click", () => {
+    sfx.play("click");
+    enteredPin = enteredPin.slice(0, -1);
+    updatePinUI();
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (!isLocked) return;
+    if (e.key >= "0" && e.key <= "9") {
+      handleKeypadPress(e.key);
+    } else if (e.key === "Backspace") {
+      enteredPin = enteredPin.slice(0, -1);
+      updatePinUI();
+    } else if (e.key === "Escape") {
+      enteredPin = "";
+      updatePinUI();
+    }
+  });
+
+  headerLockBtn.addEventListener("click", lockApp);
+
+  setPinBtn.addEventListener("click", () => {
+    const newPin = prompt("Enter a 4-digit numeric passcode to secure your app:", "1234");
+    if (newPin && /^\d{4}$/.test(newPin)) {
+      appPin = newPin;
+      localStorage.setItem("expense_pin", appPin);
+      updatePinSettingsView();
+      sfx.play("success");
+      showToast("Security PIN activated!", "success");
+    } else if (newPin !== null) {
+      showToast("PIN must be exactly 4 digits", "warning");
+    }
+  });
+
+  removePinBtn.addEventListener("click", () => {
+    const current = prompt("Enter your current PIN to disable security:");
+    if (current === appPin) {
+      appPin = null;
+      localStorage.removeItem("expense_pin");
+      updatePinSettingsView();
+      sfx.play("delete");
+      showToast("Security PIN removed", "info");
+    } else if (current !== null) {
+      showToast("Incorrect PIN", "warning");
+    }
+  });
+}
+
+function updatePinSettingsView() {
+  if (appPin) {
+    headerLockBtn.classList.remove("hidden");
+    setPinBtn.textContent = "Change PIN";
+    removePinBtn.classList.remove("hidden");
+    pinSettingStatusText.textContent = "Passcode protection is currently ACTIVE 🔒";
+  } else {
+    headerLockBtn.classList.add("hidden");
+    setPinBtn.textContent = "Set Passcode";
+    removePinBtn.classList.add("hidden");
+    pinSettingStatusText.textContent = "Passcode lock is currently disabled.";
+  }
+}
+
 // --- VIEW NAVIGATION CONTROLLER ---
 function switchView(viewName) {
+  sfx.play("click");
   activeView = viewName;
   navTabs.forEach(tab => {
     tab.classList.toggle("active", tab.getAttribute("data-view") === viewName);
@@ -255,74 +515,278 @@ function switchView(viewName) {
     c.classList.toggle("active", c.id === `view-${viewName}`);
   });
 
-  if (viewName === "dashboard") {
-    renderDashboard();
-  } else if (viewName === "transactions") {
-    renderLedger();
-  } else if (viewName === "budgets") {
-    renderBudgetsAndGoals();
-  } else if (viewName === "subscriptions") {
-    renderSubscriptions();
-  } else if (viewName === "analytics") {
-    renderAnalyticsView();
-  } else if (viewName === "settings") {
+  if (viewName === "dashboard") renderDashboard();
+  else if (viewName === "accounts") renderAccountsView();
+  else if (viewName === "transactions") renderLedger();
+  else if (viewName === "budgets") renderBudgetsAndGoals();
+  else if (viewName === "subscriptions") renderSubscriptions();
+  else if (viewName === "analytics") renderAnalyticsView();
+  else if (viewName === "settings") {
     settingsCurrencySelect.value = currentCurrency;
+    updatePinSettingsView();
   }
 }
 
-// --- CATEGORY SELECTOR INITIALIZERS ---
-function populateCategorySelect(type) {
-  categorySelect.innerHTML = "";
-  const options = CATEGORIES[type] || [];
-  options.forEach(cat => {
+// --- ACCOUNTS & NET WORTH ENGINE ---
+function populateAccountDropdowns() {
+  accountSelect.innerHTML = "";
+  targetAccountSelect.innerHTML = "";
+  filterAccountSelect.innerHTML = '<option value="all">All Accounts</option>';
+
+  accounts.forEach(acc => {
     const opt = document.createElement("option");
-    opt.value = cat.id;
-    opt.textContent = `${cat.icon} ${cat.label}`;
-    categorySelect.appendChild(opt);
+    opt.value = acc.id;
+    opt.textContent = `${acc.icon} ${acc.name} (${formatCurrency(acc.balance)})`;
+    accountSelect.appendChild(opt);
+
+    const optTarget = document.createElement("option");
+    optTarget.value = acc.id;
+    optTarget.textContent = `${acc.icon} ${acc.name}`;
+    targetAccountSelect.appendChild(optTarget);
+
+    const optFilter = document.createElement("option");
+    optFilter.value = acc.id;
+    optFilter.textContent = `${acc.icon} ${acc.name}`;
+    filterAccountSelect.appendChild(optFilter);
   });
+
+  if (accounts.length > 1) {
+    targetAccountSelect.selectedIndex = 1;
+  }
 }
 
-function populateFilterCategories() {
-  const currentSelection = filterCategorySelect.value;
-  filterCategorySelect.innerHTML = '<option value="all">All Categories</option>';
-  const allCategories = [
-    ...CATEGORIES.expense.map(c => ({ ...c, kind: "Expense" })),
-    ...CATEGORIES.income.map(c => ({ ...c, kind: "Income" }))
-  ];
-  allCategories.forEach(cat => {
-    const opt = document.createElement("option");
-    opt.value = cat.id;
-    opt.textContent = `${cat.icon} ${cat.label} (${cat.kind})`;
-    filterCategorySelect.appendChild(opt);
-  });
-  if (currentSelection) filterCategorySelect.value = currentSelection;
+function renderAccountsView() {
+  populateAccountDropdowns();
+  accountsGrid.innerHTML = "";
 
-  // Subscriptions category select
-  subCategoryInput.innerHTML = "";
-  CATEGORIES.expense.forEach(c => {
-    const opt = document.createElement("option");
-    opt.value = c.id;
-    opt.textContent = `${c.icon} ${c.label}`;
-    subCategoryInput.appendChild(opt);
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+
+  accounts.forEach(acc => {
+    if (acc.balance >= 0) totalAssets += acc.balance;
+    else totalLiabilities += Math.abs(acc.balance);
+
+    const isLiability = acc.type === "credit";
+    const card = document.createElement("div");
+    card.className = "account-card";
+    card.innerHTML = `
+      <div>
+        <div class="account-card-header">
+          <div class="account-name-group">
+            <div class="account-icon-box">${acc.icon}</div>
+            <div>
+              <div class="account-name">${acc.name}</div>
+              <span class="account-type-tag ${isLiability ? "liability" : "asset"}">${acc.type}</span>
+            </div>
+          </div>
+          <button class="btn-action delete-btn" title="Delete Account" onclick="deleteAccount('${acc.id}')">🗑️</button>
+        </div>
+        <div class="account-balance-display">
+          <span class="account-balance-label">Current Balance</span>
+          <div class="account-balance-val ${acc.balance >= 0 ? "text-income" : "text-expense"}">
+            ${formatCurrency(acc.balance)}
+          </div>
+        </div>
+      </div>
+      <div class="form-actions" style="margin-top:12px;">
+        <button class="btn-sm btn-outline" style="flex:1;" onclick="promptAdjustBalance('${acc.id}')">Adjust Balance</button>
+      </div>
+    `;
+    accountsGrid.appendChild(card);
   });
+
+  const netWorth = totalAssets - totalLiabilities;
+  netWorthDisplay.textContent = formatCurrency(netWorth);
+  netWorthDisplay.className = netWorth >= 0 ? "text-income" : "text-expense";
+  totalAssetsDisplay.textContent = formatCurrency(totalAssets);
+  totalLiabilitiesDisplay.textContent = formatCurrency(totalLiabilities);
 }
 
-// --- DASHBOARD VIEW & KPI CALCULATIONS ---
+function promptAdjustBalance(accId) {
+  const acc = accounts.find(a => a.id === accId);
+  if (!acc) return;
+  const input = prompt(`Enter new balance for ${acc.name}:`, acc.balance);
+  const newBal = parseFloat(input);
+  if (!isNaN(newBal)) {
+    acc.balance = newBal;
+    saveAccounts();
+    renderAccountsView();
+    renderDashboard();
+    sfx.play("success");
+    showToast(`Updated balance for ${acc.name}`, "success");
+  }
+}
+
+function handleAccountSubmit(e) {
+  e.preventDefault();
+  const name = accNameInput.value.trim();
+  const type = accTypeSelect.value;
+  const balance = parseFloat(accBalanceInput.value) || 0;
+
+  if (!name) return;
+
+  let icon = "💳";
+  if (type === "savings") icon = "🏦";
+  else if (type === "cash") icon = "💵";
+  else if (type === "investment") icon = "📈";
+
+  const id = name.toLowerCase().replace(/[^a-z0-9]/g, "_") + "_" + Date.now();
+  accounts.push({ id, name, type, balance, icon });
+  saveAccounts();
+  accountModal.classList.add("hidden");
+  accountForm.reset();
+  renderAccountsView();
+  sfx.play("success");
+  showToast("Account created successfully", "success");
+}
+
+function deleteAccount(accId) {
+  if (accounts.length <= 1) {
+    showToast("You must maintain at least one account", "warning");
+    return;
+  }
+  if (confirm("Delete this account? Existing transactions will retain their historical record.")) {
+    accounts = accounts.filter(a => a.id !== accId);
+    saveAccounts();
+    renderAccountsView();
+    sfx.play("delete");
+    showToast("Account removed", "info");
+  }
+}
+
+function saveAccounts() {
+  localStorage.setItem("expense_accounts", JSON.stringify(accounts));
+}
+
+// --- NATURAL LANGUAGE SMART ADD PARSER ---
+function handleSmartAdd() {
+  const text = smartInput.value.trim();
+  if (!text) return;
+
+  // Regex patterns to capture amount, action, and category keywords
+  const amountMatch = text.match(/(?:\$|\b)(\d+(?:\.\d{1,2})?)/);
+  const amount = amountMatch ? parseFloat(amountMatch[1]) : null;
+
+  if (!amount) {
+    showToast("Could not detect amount. Try: 'Spent $45 on groceries'", "warning");
+    return;
+  }
+
+  const isIncome = /\b(salary|earned|income|deposit|got|freelance|bonus|dividend)\b/i.test(text);
+  const type = isIncome ? "income" : "expense";
+
+  // Category detection heuristic
+  let category = type === "income" ? "Salary" : "Food & Drinks";
+  if (/grocery|food|dining|dinner|lunch|breakfast|burger|pizza|coffee|cafe/i.test(text)) category = "Food & Drinks";
+  else if (/gas|uber|taxi|transport|flight|train|bus|fuel/i.test(text)) category = "Transportation";
+  else if (/shopping|clothes|shoes|amazon|store|mall/i.test(text)) category = "Shopping";
+  else if (/rent|utility|utilities|bill|electric|water|internet|wifi/i.test(text)) category = "Housing & Bills";
+  else if (/netflix|movie|cinema|spotify|game|concert/i.test(text)) category = "Entertainment";
+  else if (/doctor|medicine|health|pharmacy|dentist/i.test(text)) category = "Healthcare";
+
+  // Clean description
+  let desc = text.replace(/(?:\$|\b)\d+(?:\.\d{1,2})?/g, "").replace(/\b(spent|paid|for|on|earned|received|got)\b/gi, "").trim();
+  if (!desc) desc = category;
+
+  transactions.unshift({
+    id: Date.now(),
+    text: desc.charAt(0).toUpperCase() + desc.slice(1),
+    amount: amount,
+    type: type,
+    category: category,
+    account: accounts[0]?.id || "checking",
+    tags: [],
+    receipt: null,
+    date: new Date().toISOString().split("T")[0]
+  });
+
+  // Adjust account balance
+  const acc = accounts[0];
+  if (acc) {
+    if (type === "income") acc.balance += amount;
+    else acc.balance -= amount;
+    saveAccounts();
+  }
+
+  saveTransactions();
+  smartInput.value = "";
+  renderApp();
+  sfx.play("success");
+  showToast(`Parsed & Added: "${desc}" (${formatCurrency(amount)})`, "success");
+}
+
+// --- RECEIPT COMPRESSION & ATTACHMENT ---
+function handleReceiptUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const img = new Image();
+    img.onload = function() {
+      // Scale down image to max 800px on longest side
+      const canvas = document.createElement("canvas");
+      let w = img.width;
+      let h = img.height;
+      const maxDim = 800;
+      if (w > maxDim || h > maxDim) {
+        if (w > h) {
+          h = Math.round((h * maxDim) / w);
+          w = maxDim;
+        } else {
+          w = Math.round((w * maxDim) / h);
+          h = maxDim;
+        }
+      }
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      currentReceiptBase64 = canvas.toDataURL("image/jpeg", 0.7);
+
+      receiptPreviewImg.src = currentReceiptBase64;
+      receiptPreviewContainer.classList.remove("hidden");
+      showToast("Receipt image compressed & attached!", "info");
+    };
+    img.src = event.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearReceiptPreview() {
+  currentReceiptBase64 = null;
+  receiptFileInput.value = "";
+  receiptPreviewContainer.classList.add("hidden");
+  receiptPreviewImg.src = "";
+}
+
+function openReceiptViewer(base64) {
+  sfx.play("click");
+  receiptModalImg.src = base64;
+  receiptModal.classList.remove("hidden");
+}
+
+// --- FORM CONTROLLER (ADD, EDIT & TRANSFERS) ---
 function setFormType(type) {
   currentType = type;
-  if (type === "expense") {
-    typeExpenseBtn.classList.add("active");
-    typeIncomeBtn.classList.remove("active");
+  typeExpenseBtn.classList.toggle("active", type === "expense");
+  typeIncomeBtn.classList.toggle("active", type === "income");
+  typeTransferBtn.classList.toggle("active", type === "transfer");
+
+  if (type === "transfer") {
+    targetAccountGroup.classList.remove("hidden");
+    categoryGroup.classList.add("hidden");
   } else {
-    typeIncomeBtn.classList.add("active");
-    typeExpenseBtn.classList.remove("active");
+    targetAccountGroup.classList.add("hidden");
+    categoryGroup.classList.remove("hidden");
+    populateCategorySelect(type);
   }
-  populateCategorySelect(type);
 }
 
 function resetForm() {
   transactionForm.reset();
   dateInput.value = new Date().toISOString().split("T")[0];
+  clearReceiptPreview();
   setFormType("expense");
   editingId = null;
   formTitle.textContent = "Add New Transaction";
@@ -344,9 +808,25 @@ function startEditTransaction(id) {
 
   textInput.value = target.text;
   amountInput.value = target.amount;
+  accountSelect.value = target.account || accounts[0]?.id || "checking";
   dateInput.value = target.date;
+  tagsInput.value = (target.tags || []).join(", ");
+
   setFormType(target.type);
-  categorySelect.value = target.category;
+  if (target.type === "transfer") {
+    targetAccountSelect.value = target.targetAccount || accounts[1]?.id;
+  } else {
+    categorySelect.value = target.category;
+  }
+
+  if (target.receipt) {
+    currentReceiptBase64 = target.receipt;
+    receiptPreviewImg.src = currentReceiptBase64;
+    receiptPreviewContainer.classList.remove("hidden");
+  } else {
+    clearReceiptPreview();
+  }
+
   transactionForm.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
@@ -354,73 +834,132 @@ function handleFormSubmit(e) {
   e.preventDefault();
   const textVal = textInput.value.trim();
   const amountVal = parseFloat(amountInput.value);
-  const categoryVal = categorySelect.value;
+  const accountVal = accountSelect.value;
+  const targetAccountVal = currentType === "transfer" ? targetAccountSelect.value : null;
+  const categoryVal = currentType === "transfer" ? "Transfer" : categorySelect.value;
   const dateVal = dateInput.value;
+  const tagsVal = tagsInput.value.split(",").map(t => t.trim().replace(/^#/, "")).filter(Boolean);
 
   if (!textVal || isNaN(amountVal) || amountVal <= 0 || !dateVal) {
-    showToast("Please enter a valid description, date, and amount > 0", "warning");
+    showToast("Please enter valid details", "warning");
+    return;
+  }
+
+  if (currentType === "transfer" && accountVal === targetAccountVal) {
+    showToast("Source and destination accounts must be different", "warning");
     return;
   }
 
   if (editingId !== null) {
+    // Revert previous transaction impact from account
+    const old = transactions.find(t => t.id === editingId);
+    if (old) revertAccountImpact(old);
+
     transactions = transactions.map(t => (t.id === editingId ? {
       ...t,
       text: textVal,
       amount: amountVal,
       type: currentType,
       category: categoryVal,
+      account: accountVal,
+      targetAccount: targetAccountVal,
+      tags: tagsVal,
+      receipt: currentReceiptBase64,
       date: dateVal
     } : t));
-    showToast("Transaction updated successfully", "success");
+
+    applyAccountImpact({ type: currentType, amount: amountVal, account: accountVal, targetAccount: targetAccountVal });
+    showToast("Transaction updated", "success");
   } else {
-    transactions.unshift({
+    const newTx = {
       id: Date.now(),
       text: textVal,
       amount: amountVal,
       type: currentType,
       category: categoryVal,
+      account: accountVal,
+      targetAccount: targetAccountVal,
+      tags: tagsVal,
+      receipt: currentReceiptBase64,
       date: dateVal
-    });
-    showToast("Transaction added successfully", "success");
+    };
+    transactions.unshift(newTx);
+    applyAccountImpact(newTx);
+    showToast("Transaction recorded", "success");
   }
 
+  saveAccounts();
   saveTransactions();
   resetForm();
   renderApp();
+  sfx.play("success");
 }
 
-function removeTransaction(id) {
-  if (confirm("Are you sure you want to delete this transaction?")) {
-    transactions = transactions.filter(t => t.id !== id);
-    selectedTransactionIds.delete(id);
-    if (editingId === id) resetForm();
-    saveTransactions();
-    renderApp();
-    showToast("Transaction removed", "info");
+function applyAccountImpact(tx) {
+  const src = accounts.find(a => a.id === tx.account);
+  if (tx.type === "income" && src) src.balance += tx.amount;
+  else if (tx.type === "expense" && src) src.balance -= tx.amount;
+  else if (tx.type === "transfer" && src) {
+    src.balance -= tx.amount;
+    const dest = accounts.find(a => a.id === tx.targetAccount);
+    if (dest) dest.balance += tx.amount;
   }
 }
 
+function revertAccountImpact(tx) {
+  const src = accounts.find(a => a.id === tx.account);
+  if (tx.type === "income" && src) src.balance -= tx.amount;
+  else if (tx.type === "expense" && src) src.balance += tx.amount;
+  else if (tx.type === "transfer" && src) {
+    src.balance += tx.amount;
+    const dest = accounts.find(a => a.id === tx.targetAccount);
+    if (dest) dest.balance -= tx.amount;
+  }
+}
+
+function removeTransaction(id) {
+  if (confirm("Delete this transaction? Account balances will adjust automatically.")) {
+    const target = transactions.find(t => t.id === id);
+    if (target) revertAccountImpact(target);
+    transactions = transactions.filter(t => t.id !== id);
+    selectedTransactionIds.delete(id);
+    if (editingId === id) resetForm();
+
+    saveAccounts();
+    saveTransactions();
+    renderApp();
+    sfx.play("delete");
+    showToast("Transaction deleted", "info");
+  }
+}
+
+// --- DASHBOARD VIEW ---
 function renderDashboard() {
+  populateAccountDropdowns();
+
   const incomeTotal = transactions.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
   const expenseTotal = transactions.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
-  const netBalance = incomeTotal - expenseTotal;
 
-  dashBalance.textContent = formatCurrency(netBalance);
+  // Compute Net Worth as Net Balance
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+  accounts.forEach(a => {
+    if (a.balance >= 0) totalAssets += a.balance;
+    else totalLiabilities += Math.abs(a.balance);
+  });
+  const netWorth = totalAssets - totalLiabilities;
+
+  dashBalance.textContent = formatCurrency(netWorth);
   dashIncome.textContent = formatCurrency(incomeTotal);
   dashExpense.textContent = formatCurrency(expenseTotal);
 
   const incCount = transactions.filter(t => t.type === "income").length;
   const expCount = transactions.filter(t => t.type === "expense").length;
-  dashIncomeCount.textContent = `${incCount} transaction${incCount === 1 ? "" : "s"}`;
-  dashExpenseCount.textContent = `${expCount} transaction${expCount === 1 ? "" : "s"}`;
+  dashIncomeCount.textContent = `${incCount} transactions`;
+  dashExpenseCount.textContent = `${expCount} transactions`;
 
-  if (netBalance >= 0) {
-    dashBalanceBadge.textContent = "Positive";
-    dashBalanceBadge.classList.remove("negative");
-  } else {
-    dashBalanceBadge.textContent = "Deficit";
-    dashBalanceBadge.classList.add("negative");
-  }
+  dashBalanceBadge.textContent = netWorth >= 0 ? "Positive" : "Deficit";
+  dashBalanceBadge.className = `badge ${netWorth >= 0 ? "balance-badge" : "balance-badge negative"}`;
 
   if (incomeTotal > 0) {
     const rate = Math.round(((incomeTotal - expenseTotal) / incomeTotal) * 100);
@@ -429,7 +968,7 @@ function renderDashboard() {
     dashSavingsRate.textContent = expenseTotal > 0 ? "-100%" : "0%";
   }
 
-  // Runway calculation
+  // Monthly Burn and Runway
   const monthlyExpenseMap = {};
   transactions.filter(t => t.type === "expense" && t.date).forEach(t => {
     const ym = t.date.substring(0, 7);
@@ -438,25 +977,20 @@ function renderDashboard() {
   const mKeys = Object.keys(monthlyExpenseMap);
   const avgMonthlyBurn = mKeys.length > 0 ? mKeys.reduce((a, b) => a + monthlyExpenseMap[b], 0) / mKeys.length : expenseTotal;
 
-  if (netBalance <= 0) {
+  if (netWorth <= 0) {
     dashRunway.textContent = "0 Mos";
-    dashRunwaySubtext.textContent = "Net balance in deficit";
+    dashRunwaySubtext.textContent = "Balance in deficit";
   } else if (avgMonthlyBurn <= 0) {
     dashRunway.textContent = "∞ Mos";
     dashRunwaySubtext.textContent = "No expenses recorded";
   } else {
-    const mos = (netBalance / avgMonthlyBurn).toFixed(1);
+    const mos = (netWorth / avgMonthlyBurn).toFixed(1);
     dashRunway.textContent = `${mos} Mos`;
     dashRunwaySubtext.textContent = `Avg burn: ${formatCurrency(avgMonthlyBurn)}/mo`;
   }
 
-  // Dashboard Month Budget Snapshot
   renderBudgetSnapshot();
-
-  // Recent 5 Transactions
   renderRecentTransactions();
-
-  // Dashboard Visualizer Chart
   renderDashChart();
 }
 
@@ -483,7 +1017,6 @@ function renderBudgetSnapshot() {
     return;
   }
 
-  // Take top 4 for dashboard snapshot
   budgeted.slice(0, 4).forEach(catId => {
     const meta = getCategoryMeta(catId, "expense");
     const limit = budgets[catId];
@@ -528,15 +1061,19 @@ function renderRecentTransactions() {
 
   recent.forEach(t => {
     const isInc = t.type === "income";
+    const isTrans = t.type === "transfer";
     const meta = getCategoryMeta(t.category, t.type);
+    const acc = getAccountMeta(t.account);
+
     const li = document.createElement("li");
-    li.className = `transaction-item ${isInc ? "income-item" : "expense-item"}`;
+    li.className = `transaction-item ${isInc ? "income-item" : isTrans ? "transfer-item" : "expense-item"}`;
     li.innerHTML = `
       <div class="item-left">
-        <div class="category-icon-box">${meta.icon}</div>
+        <div class="category-icon-box">${isTrans ? "🔄" : meta.icon}</div>
         <div class="item-info">
           <div class="item-title">${t.text}</div>
           <div class="item-meta">
+            <span class="account-badge">${acc.name}</span>
             <span class="category-badge">${meta.label}</span>
             <span>•</span>
             <span>${formatDateDisplay(t.date)}</span>
@@ -544,8 +1081,8 @@ function renderRecentTransactions() {
         </div>
       </div>
       <div class="item-right">
-        <div class="item-amount ${isInc ? "income" : "expense"}">
-          ${isInc ? "+" : "-"}${formatCurrency(t.amount)}
+        <div class="item-amount ${isInc ? "income" : isTrans ? "transfer" : "expense"}">
+          ${isInc ? "+" : isTrans ? "⇄" : "-"}${formatCurrency(t.amount)}
         </div>
         <div class="item-actions">
           <button class="btn-action" title="Edit" onclick="startEditTransaction(${t.id})">✏️</button>
@@ -557,32 +1094,22 @@ function renderRecentTransactions() {
   });
 }
 
-// --- DASHBOARD DUAL CHART ---
 function renderDashChart() {
   if (typeof Chart === "undefined") return;
-
-  if (dashChartInstance) {
-    dashChartInstance.destroy();
-    dashChartInstance = null;
-  }
+  if (dashChartInstance) { dashChartInstance.destroy(); dashChartInstance = null; }
 
   if (transactions.length === 0) {
     categoryChartCanvas.style.display = "none";
     chartPlaceholder.style.display = "block";
     return;
   }
-
   categoryChartCanvas.style.display = "block";
   chartPlaceholder.style.display = "none";
+
   const ctx = categoryChartCanvas.getContext("2d");
 
   if (activeChartTab === "category") {
     const expTx = transactions.filter(t => t.type === "expense");
-    if (expTx.length === 0) {
-      categoryChartCanvas.style.display = "none";
-      chartPlaceholder.style.display = "block";
-      return;
-    }
     const catMap = {};
     expTx.forEach(t => {
       const meta = getCategoryMeta(t.category, "expense");
@@ -609,26 +1136,13 @@ function renderDashChart() {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            position: "bottom",
-            labels: {
-              boxWidth: 12,
-              padding: 8,
-              color: currentTheme === "dark" ? "#94a3b8" : "#64748b",
-              font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 }
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: (c) => ` ${c.label}: ${formatCurrency(c.raw)}`
-            }
-          }
+          legend: { position: "bottom", labels: { boxWidth: 12, padding: 8, color: currentTheme === "dark" ? "#94a3b8" : "#64748b" } },
+          tooltip: { callbacks: { label: c => ` ${c.label}: ${formatCurrency(c.raw)}` } }
         },
         cutout: "65%"
       }
     });
   } else {
-    // 6-Month Cash Flow Trend
     const months = [];
     const now = new Date();
     for (let i = 5; i >= 0; i--) {
@@ -638,55 +1152,59 @@ function renderDashChart() {
       months.push({ key, label });
     }
 
-    const incomeData = months.map(m => transactions.filter(t => t.type === "income" && t.date && t.date.startsWith(m.key)).reduce((s, t) => s + t.amount, 0));
-    const expenseData = months.map(m => transactions.filter(t => t.type === "expense" && t.date && t.date.startsWith(m.key)).reduce((s, t) => s + t.amount, 0));
+    const incData = months.map(m => transactions.filter(t => t.type === "income" && t.date && t.date.startsWith(m.key)).reduce((s, t) => s + t.amount, 0));
+    const expData = months.map(m => transactions.filter(t => t.type === "expense" && t.date && t.date.startsWith(m.key)).reduce((s, t) => s + t.amount, 0));
 
     dashChartInstance = new Chart(ctx, {
       type: "bar",
       data: {
         labels: months.map(m => m.label),
         datasets: [
-          { label: "Income", data: incomeData, backgroundColor: "#10b981", borderRadius: 4 },
-          { label: "Expense", data: expenseData, backgroundColor: "#ef4444", borderRadius: 4 }
+          { label: "Income", data: incData, backgroundColor: "#10b981", borderRadius: 4 },
+          { label: "Expense", data: expData, backgroundColor: "#ef4444", borderRadius: 4 }
         ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            position: "top",
-            labels: {
-              boxWidth: 12,
-              color: currentTheme === "dark" ? "#94a3b8" : "#64748b",
-              font: { family: "'Plus Jakarta Sans', sans-serif", size: 11 }
-            }
-          },
-          tooltip: {
-            callbacks: {
-              label: (c) => ` ${c.dataset.label}: ${formatCurrency(c.raw)}`
-            }
-          }
+          legend: { position: "top", labels: { boxWidth: 12, color: currentTheme === "dark" ? "#94a3b8" : "#64748b" } },
+          tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${formatCurrency(c.raw)}` } }
         },
         scales: {
           x: { grid: { display: false }, ticks: { color: currentTheme === "dark" ? "#94a3b8" : "#64748b" } },
-          y: {
-            grid: { color: currentTheme === "dark" ? "#27354f" : "#e2e8f0" },
-            ticks: {
-              color: currentTheme === "dark" ? "#94a3b8" : "#64748b",
-              callback: (v) => `${currentCurrency}${v}`
-            }
-          }
+          y: { grid: { color: currentTheme === "dark" ? "#27354f" : "#e2e8f0" }, ticks: { color: currentTheme === "dark" ? "#94a3b8" : "#64748b", callback: v => `${currentCurrency}${v}` } }
         }
       }
     });
   }
 }
 
-// --- TRANSACTIONS LEDGER (FULL PAGE) ---
+// --- TRANSACTIONS LEDGER (FULL TABULAR PAGE WITH TAGS & RECEIPTS) ---
+function renderTagChips() {
+  const allTags = new Set();
+  transactions.forEach(t => (t.tags || []).forEach(tag => allTags.add(tag)));
+
+  tagChipsContainer.innerHTML = "";
+  const allChip = document.createElement("button");
+  allChip.className = `tag-chip ${activeTagFilter === "all" ? "active" : ""}`;
+  allChip.textContent = "# All";
+  allChip.onclick = () => { activeTagFilter = "all"; renderLedger(); };
+  tagChipsContainer.appendChild(allChip);
+
+  allTags.forEach(tag => {
+    const chip = document.createElement("button");
+    chip.className = `tag-chip ${activeTagFilter === tag ? "active" : ""}`;
+    chip.textContent = `#${tag}`;
+    chip.onclick = () => { activeTagFilter = tag; renderLedger(); };
+    tagChipsContainer.appendChild(chip);
+  });
+}
+
 function getFilteredAndSortedTransactions() {
   const query = searchInput.value.toLowerCase().trim();
   const filterType = filterTypeSelect.value;
+  const filterAcc = filterAccountSelect.value;
   const filterCat = filterCategorySelect.value;
   const sortBy = sortBySelect.value;
 
@@ -697,16 +1215,18 @@ function getFilteredAndSortedTransactions() {
   const currentYear = `${now.getFullYear()}-`;
 
   let filtered = transactions.filter(t => {
-    const matchesSearch = !query || t.text.toLowerCase().includes(query) || t.category.toLowerCase().includes(query);
+    const matchesSearch = !query || t.text.toLowerCase().includes(query) || t.category.toLowerCase().includes(query) || (t.tags || []).some(tg => tg.toLowerCase().includes(query));
     const matchesType = filterType === "all" || t.type === filterType;
-    const matchesCategory = filterCat === "all" || t.category === filterCat;
+    const matchesAcc = filterAcc === "all" || t.account === filterAcc;
+    const matchesCat = filterCat === "all" || t.category === filterCat;
+    const matchesTag = activeTagFilter === "all" || (t.tags || []).includes(activeTagFilter);
 
     let matchesPreset = true;
     if (activeDatePreset === "this-month") matchesPreset = t.date && t.date.startsWith(currentYM);
     else if (activeDatePreset === "last-month") matchesPreset = t.date && t.date.startsWith(lastYM);
     else if (activeDatePreset === "this-year") matchesPreset = t.date && t.date.startsWith(currentYear);
 
-    return matchesSearch && matchesType && matchesCategory && matchesPreset;
+    return matchesSearch && matchesType && matchesAcc && matchesCat && matchesTag && matchesPreset;
   });
 
   filtered.sort((a, b) => {
@@ -721,7 +1241,10 @@ function getFilteredAndSortedTransactions() {
 }
 
 function renderLedger() {
+  populateAccountDropdowns();
+  renderTagChips();
   const filtered = getFilteredAndSortedTransactions();
+
   ledgerTableBody.innerHTML = "";
   ledgerCountLabel.textContent = `Showing ${filtered.length} of ${transactions.length} records`;
 
@@ -735,17 +1258,27 @@ function renderLedger() {
 
   filtered.forEach(t => {
     const isInc = t.type === "income";
+    const isTrans = t.type === "transfer";
     const meta = getCategoryMeta(t.category, t.type);
+    const acc = getAccountMeta(t.account);
     const isChecked = selectedTransactionIds.has(t.id);
+
+    const tagsMarkup = (t.tags || []).map(tg => `<span class="tag-badge">#${tg}</span>`).join(" ");
+    const receiptMarkup = t.receipt ? `<button class="receipt-btn-link" title="View attached receipt" onclick="openReceiptViewer('${t.receipt}')">📄</button>` : `<span style="color:var(--text-subtle);">—</span>`;
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td><input type="checkbox" class="ledger-row-checkbox" data-id="${t.id}" ${isChecked ? "checked" : ""}></td>
       <td>${formatDateDisplay(t.date)}</td>
-      <td><strong>${t.text}</strong></td>
-      <td><span class="category-badge">${meta.icon} ${meta.label}</span></td>
-      <td><span class="badge ${isInc ? "balance-badge" : "balance-badge negative"}">${isInc ? "Income" : "Expense"}</span></td>
-      <td class="text-right"><strong class="${isInc ? "text-income" : "text-expense"}">${isInc ? "+" : "-"}${formatCurrency(t.amount)}</strong></td>
+      <td>
+        <strong>${t.text}</strong>
+        ${tagsMarkup ? `<div style="margin-top:2px;">${tagsMarkup}</div>` : ""}
+      </td>
+      <td><span class="account-badge">${acc.name}</span></td>
+      <td><span class="category-badge">${isTrans ? "🔄 Transfer" : `${meta.icon} ${meta.label}`}</span></td>
+      <td><span class="badge ${isInc ? "balance-badge" : isTrans ? "balance-badge" : "balance-badge negative"}">${isInc ? "Income" : isTrans ? "Transfer" : "Expense"}</span></td>
+      <td class="text-center">${receiptMarkup}</td>
+      <td class="text-right"><strong class="${isInc ? "text-income" : isTrans ? "text-transfer" : "text-expense"}">${isInc ? "+" : isTrans ? "⇄" : "-"}${formatCurrency(t.amount)}</strong></td>
       <td class="text-center">
         <button class="btn-action" title="Edit" onclick="startEditTransaction(${t.id})">✏️</button>
         <button class="btn-action delete-btn" title="Delete" onclick="removeTransaction(${t.id})">🗑️</button>
@@ -756,9 +1289,7 @@ function renderLedger() {
 
   updateBulkActions();
 
-  // Attach row checkbox listeners
-  const rowCheckboxes = ledgerTableBody.querySelectorAll(".ledger-row-checkbox");
-  rowCheckboxes.forEach(cb => {
+  ledgerTableBody.querySelectorAll(".ledger-row-checkbox").forEach(cb => {
     cb.addEventListener("change", (e) => {
       const id = parseFloat(e.target.getAttribute("data-id"));
       if (e.target.checked) selectedTransactionIds.add(id);
@@ -771,11 +1302,7 @@ function renderLedger() {
 function updateBulkActions() {
   const count = selectedTransactionIds.size;
   selectedCountEl.textContent = count;
-  if (count > 0) {
-    bulkDeleteBtn.classList.remove("hidden");
-  } else {
-    bulkDeleteBtn.classList.add("hidden");
-  }
+  bulkDeleteBtn.classList.toggle("hidden", count === 0);
 }
 
 function handleSelectAll(e) {
@@ -795,13 +1322,13 @@ function handleBulkDelete() {
     selectedTransactionIds.clear();
     saveTransactions();
     renderApp();
-    showToast("Selected transactions deleted", "info");
+    sfx.play("delete");
+    showToast("Bulk deletion completed", "info");
   }
 }
 
 // --- BUDGETS & SAVINGS GOALS VIEW ---
 function renderBudgetsAndGoals() {
-  // Full monthly budgets
   const now = new Date();
   const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const monthlyExpenses = {};
@@ -882,7 +1409,6 @@ function renderBudgetsAndGoals() {
   }
 }
 
-// Budget Modal Handlers
 function openBudgetConfigModal() {
   budgetInputsContainer.innerHTML = "";
   CATEGORIES.expense.forEach(cat => {
@@ -918,10 +1444,10 @@ function saveBudgets(e) {
   localStorage.setItem("expense_budgets", JSON.stringify(budgets));
   closeBudgetConfigModal();
   renderApp();
+  sfx.play("success");
   showToast("Budgets saved successfully", "success");
 }
 
-// Goals Handlers
 function handleGoalSubmit(e) {
   e.preventDefault();
   const name = goalNameInput.value.trim();
@@ -929,16 +1455,14 @@ function handleGoalSubmit(e) {
   const saved = parseFloat(goalSavedInput.value) || 0;
   const date = goalDateInput.value;
 
-  if (!name || isNaN(target) || target <= 0) {
-    showToast("Please enter a valid goal name and target", "warning");
-    return;
-  }
+  if (!name || isNaN(target) || target <= 0) return;
 
   savingsGoals.push({ id: Date.now(), name, target, saved, date });
   localStorage.setItem("expense_goals", JSON.stringify(savingsGoals));
   goalModal.classList.add("hidden");
   goalForm.reset();
   renderBudgetsAndGoals();
+  sfx.play("success");
   showToast("Savings Goal created!", "success");
 }
 
@@ -947,6 +1471,7 @@ function deleteGoal(id) {
     savingsGoals = savingsGoals.filter(g => g.id !== id);
     localStorage.setItem("expense_goals", JSON.stringify(savingsGoals));
     renderBudgetsAndGoals();
+    sfx.play("delete");
     showToast("Goal removed", "info");
   }
 }
@@ -954,13 +1479,14 @@ function deleteGoal(id) {
 function promptDepositGoal(id) {
   const goal = savingsGoals.find(g => g.id === id);
   if (!goal) return;
-  const input = prompt(`Deposit money towards "${goal.name}". Enter amount:`, "50");
+  const input = prompt(`Deposit money towards "${goal.name}". Enter amount:`, "100");
   const amount = parseFloat(input);
   if (!isNaN(amount) && amount > 0) {
     goal.saved += amount;
     localStorage.setItem("expense_goals", JSON.stringify(savingsGoals));
     renderBudgetsAndGoals();
-    showToast(`Added ${formatCurrency(amount)} to ${goal.name}!`, "success");
+    sfx.play("success");
+    showToast(`Deposited ${formatCurrency(amount)} to ${goal.name}!`, "success");
   }
 }
 
@@ -975,11 +1501,7 @@ function renderSubscriptions() {
   monthlySubsTotal.textContent = formatCurrency(monthlyBurn);
 
   const sortedByDate = [...subscriptions].sort((a, b) => new Date(a.nextDate) - new Date(b.nextDate));
-  if (sortedByDate.length > 0) {
-    nextUpcomingSub.textContent = `${sortedByDate[0].name} (${formatDateDisplay(sortedByDate[0].nextDate)})`;
-  } else {
-    nextUpcomingSub.textContent = "None";
-  }
+  nextUpcomingSub.textContent = sortedByDate.length > 0 ? `${sortedByDate[0].name} (${formatDateDisplay(sortedByDate[0].nextDate)})` : "None";
 
   subscriptionsList.innerHTML = "";
   if (subscriptions.length === 0) {
@@ -1016,17 +1538,15 @@ function handleSubSubmit(e) {
   const category = subCategoryInput.value;
   const nextDate = subNextDateInput.value;
 
-  if (!name || isNaN(amount) || amount <= 0 || !nextDate) {
-    showToast("Please provide valid subscription details", "warning");
-    return;
-  }
+  if (!name || isNaN(amount) || amount <= 0 || !nextDate) return;
 
   subscriptions.push({ id: Date.now(), name, amount, frequency, category, nextDate });
   localStorage.setItem("expense_subs", JSON.stringify(subscriptions));
   subModal.classList.add("hidden");
   subForm.reset();
   renderSubscriptions();
-  showToast("Subscription added successfully", "success");
+  sfx.play("success");
+  showToast("Subscription registered", "success");
 }
 
 function deleteSubscription(id) {
@@ -1034,7 +1554,8 @@ function deleteSubscription(id) {
     subscriptions = subscriptions.filter(s => s.id !== id);
     localStorage.setItem("expense_subs", JSON.stringify(subscriptions));
     renderSubscriptions();
-    showToast("Subscription removed", "info");
+    sfx.play("delete");
+    showToast("Subscription deleted", "info");
   }
 }
 
@@ -1048,17 +1569,21 @@ function processDueSubscriptions() {
   }
 
   due.forEach(s => {
-    // Add transaction
     transactions.unshift({
       id: Date.now() + Math.random(),
       text: `${s.name} (Recurring)`,
       amount: s.amount,
       type: "expense",
       category: s.category,
+      account: accounts[0]?.id || "checking",
+      tags: ["subscription"],
+      receipt: null,
       date: s.nextDate
     });
 
-    // Advance next payment date
+    const acc = accounts[0];
+    if (acc) acc.balance -= s.amount;
+
     const d = new Date(s.nextDate);
     if (s.frequency === "yearly") d.setFullYear(d.getFullYear() + 1);
     else if (s.frequency === "weekly") d.setDate(d.getDate() + 7);
@@ -1066,18 +1591,103 @@ function processDueSubscriptions() {
     s.nextDate = d.toISOString().split("T")[0];
   });
 
+  saveAccounts();
   saveTransactions();
   localStorage.setItem("expense_subs", JSON.stringify(subscriptions));
   renderApp();
   renderSubscriptions();
-  showToast(`Processed ${due.length} recurring bill(s) into your ledger!`, "success");
+  sfx.play("success");
+  showToast(`Processed ${due.length} recurring bills!`, "success");
 }
 
-// --- ANALYTICS & REPORTS VIEW ---
-function renderAnalyticsView() {
+// --- WEALTH FORECAST & COMPOUND INTEREST SIMULATOR ---
+function updateForecastSimulator() {
   if (typeof Chart === "undefined") return;
 
-  // Overview stats in Analytics
+  const principal = parseFloat(forecastInitial.value) || 0;
+  const monthlyContrib = parseFloat(forecastMonthly.value) || 0;
+  const annualRate = (parseFloat(forecastRate.value) || 7) / 100;
+  const years = parseInt(forecastYears.value, 10) || 10;
+
+  const labels = [];
+  const principalData = [];
+  const totalValueData = [];
+
+  let currentVal = principal;
+  let totalInvested = principal;
+  const monthlyRate = annualRate / 12;
+
+  labels.push("Year 0");
+  principalData.push(principal);
+  totalValueData.push(principal);
+
+  for (let yr = 1; yr <= years; yr++) {
+    for (let m = 0; m < 12; m++) {
+      currentVal = (currentVal + monthlyContrib) * (1 + monthlyRate);
+      totalInvested += monthlyContrib;
+    }
+    labels.push(`Year ${yr}`);
+    principalData.push(Math.round(totalInvested));
+    totalValueData.push(Math.round(currentVal));
+  }
+
+  const finalValue = Math.round(currentVal);
+  const finalPrincipal = Math.round(totalInvested);
+  const finalInterest = Math.max(finalValue - finalPrincipal, 0);
+
+  forecastTotalValue.textContent = formatCurrency(finalValue);
+  forecastTotalPrincipal.textContent = formatCurrency(finalPrincipal);
+  forecastTotalInterest.textContent = formatCurrency(finalInterest);
+
+  if (forecastChartInstance) forecastChartInstance.destroy();
+
+  const ctx = forecastChartCanvas.getContext("2d");
+  forecastChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Total Projected Value",
+          data: totalValueData,
+          borderColor: "#4f46e5",
+          backgroundColor: "rgba(79, 70, 229, 0.15)",
+          fill: true,
+          tension: 0.3
+        },
+        {
+          label: "Principal Invested",
+          data: principalData,
+          borderColor: "#10b981",
+          backgroundColor: "rgba(16, 185, 129, 0.15)",
+          fill: true,
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: currentTheme === "dark" ? "#94a3b8" : "#64748b" } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${formatCurrency(c.raw)}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: currentTheme === "dark" ? "#94a3b8" : "#64748b" } },
+        y: {
+          grid: { color: currentTheme === "dark" ? "#27354f" : "#e2e8f0" },
+          ticks: { color: currentTheme === "dark" ? "#94a3b8" : "#64748b", callback: v => `${currentCurrency}${v}` }
+        }
+      }
+    }
+  });
+}
+
+// --- ANALYTICS VIEW ---
+function renderAnalyticsView() {
+  updateForecastSimulator();
+  if (typeof Chart === "undefined") return;
+
   const incomeTotal = transactions.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
   const expenseTotal = transactions.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
   const netBalance = incomeTotal - expenseTotal;
@@ -1109,13 +1719,12 @@ function renderAnalyticsView() {
   reportsTopCategory.textContent = topCatName !== "None" ? `${topCatName} (${formatCurrency(topCatAmount)})` : "None";
   reportsSavingsRate.textContent = `${savingsRate}%`;
 
-  // Recommendations
   reportsRecommendations.innerHTML = "";
   const tips = [];
   if (parseFloat(runwayMonths) < 3 && netBalance > 0) {
-    tips.push({ icon: "🚨", text: "<strong>Emergency Runway Alert:</strong> You have less than 3 months of runway. Focus on trimming discretionary categories." });
+    tips.push({ icon: "🚨", text: "<strong>Emergency Runway Alert:</strong> You have less than 3 months of runway. Focus on trimming discretionary expenses." });
   } else if (parseFloat(runwayMonths) >= 6) {
-    tips.push({ icon: "🌟", text: "<strong>Healthy Capital Buffer:</strong> You have 6+ months of reserves! Excess cash flow can be channeled to long-term assets." });
+    tips.push({ icon: "🌟", text: "<strong>Healthy Capital Buffer:</strong> You have 6+ months of reserves! Excess capital can be channeled into long-term investments." });
   }
 
   if (topCatAmount > 0 && expenseTotal > 0 && Math.round((topCatAmount / expenseTotal) * 100) >= 40) {
@@ -1135,7 +1744,6 @@ function renderAnalyticsView() {
     reportsRecommendations.appendChild(card);
   });
 
-  // Render Charts
   if (analyticsCashFlowInstance) analyticsCashFlowInstance.destroy();
   if (analyticsCategoryInstance) analyticsCategoryInstance.destroy();
 
@@ -1174,7 +1782,7 @@ function renderAnalyticsView() {
     }
   });
 
-  // 2. Category Doughnut Chart
+  // 2. Category Doughnut
   const expTx = transactions.filter(t => t.type === "expense");
   const catMap = {};
   expTx.forEach(t => {
@@ -1216,34 +1824,37 @@ function exportToCSV() {
     showToast("No records found to export", "info");
     return;
   }
-  const headers = ["ID", "Date", "Description", "Type", "Category", "Amount", "Currency"];
+  const headers = ["ID", "Date", "Description", "Type", "Account", "Category", "Amount", "Tags", "Currency"];
   const rows = transactions.map(t => [
     t.id,
     `"${t.date}"`,
     `"${t.text.replace(/"/g, '""')}"`,
     t.type,
+    `"${t.account || ''}"`,
     `"${t.category}"`,
     t.amount.toFixed(2),
+    `"${(t.tags || []).join(';')}"`,
     `"${currentCurrency}"`
   ]);
   const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
   const encoded = encodeURI(csvContent);
   const a = document.createElement("a");
   a.setAttribute("href", encoded);
-  a.setAttribute("download", `expenses_${new Date().toISOString().split("T")[0]}.csv`);
+  a.setAttribute("download", `financial_suite_${new Date().toISOString().split("T")[0]}.csv`);
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  showToast("CSV exported successfully", "success");
+  showToast("CSV export ready", "success");
 }
 
 function exportToJSON() {
   const snapshot = {
-    app: "Smart Expense Tracker Pro",
-    version: "3.0",
+    app: "Smart Expense Tracker Ultimate",
+    version: "4.0",
     exportedAt: new Date().toISOString(),
     currency: currentCurrency,
     theme: currentTheme,
+    accounts,
     budgets,
     savingsGoals,
     subscriptions,
@@ -1252,11 +1863,11 @@ function exportToJSON() {
   const jsonStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(snapshot, null, 2));
   const a = document.createElement("a");
   a.setAttribute("href", jsonStr);
-  a.setAttribute("download", `expense_backup_${new Date().toISOString().split("T")[0]}.json`);
+  a.setAttribute("download", `ultimate_finance_backup_${new Date().toISOString().split("T")[0]}.json`);
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  showToast("Full JSON database exported", "success");
+  showToast("Full JSON backup exported", "success");
 }
 
 function handleJsonFileSelect(e) {
@@ -1266,7 +1877,7 @@ function handleJsonFileSelect(e) {
     return;
   }
   const reader = new FileReader();
-  reader.onload = function (event) {
+  reader.onload = function(event) {
     try {
       const data = JSON.parse(event.target.result);
       if (!data || !Array.isArray(data.transactions)) {
@@ -1294,6 +1905,10 @@ function executeRestore() {
     amount: Math.abs(t.amount),
     type: t.type || (t.amount < 0 ? "expense" : "income"),
     category: t.category || "Other Expense",
+    account: t.account || "checking",
+    targetAccount: t.targetAccount || null,
+    tags: Array.isArray(t.tags) ? t.tags : [],
+    receipt: t.receipt || null,
     date: t.date || new Date().toISOString().split("T")[0]
   }));
 
@@ -1305,6 +1920,10 @@ function executeRestore() {
     transactions = [...newItems, ...transactions];
   }
 
+  if (Array.isArray(pendingImportData.accounts)) {
+    accounts = pendingImportData.accounts;
+    saveAccounts();
+  }
   if (pendingImportData.budgets) {
     budgets = { ...budgets, ...pendingImportData.budgets };
     localStorage.setItem("expense_budgets", JSON.stringify(budgets));
@@ -1329,19 +1948,25 @@ function executeRestore() {
   settingsRestoreBtn.disabled = true;
   pendingImportData = null;
   renderApp();
+  sfx.play("success");
   showToast(`Restored in '${mode}' mode!`, "success");
 }
 
 function wipeDatabase() {
-  if (confirm("DANGER: This will permanently wipe all transactions, budgets, subscriptions, and goals! Proceed?")) {
+  if (confirm("DANGER: This will permanently wipe all accounts, transactions, budgets, subscriptions, and goals! Proceed?")) {
     transactions = [];
+    accounts = DEFAULT_ACCOUNTS;
     budgets = {};
     savingsGoals = [];
     subscriptions = [];
+    appPin = null;
     localStorage.clear();
     saveTransactions();
+    saveAccounts();
     renderApp();
-    showToast("Database completely reset", "warning");
+    updatePinSettingsView();
+    sfx.play("delete");
+    showToast("Database reset to defaults", "warning");
   }
 }
 
@@ -1357,6 +1982,7 @@ function applyTheme(theme) {
 function toggleTheme() {
   const next = currentTheme === "dark" ? "light" : "dark";
   applyTheme(next);
+  sfx.play("click");
   showToast(`Theme changed to ${next}`, "info");
 }
 
@@ -1367,6 +1993,7 @@ function handleCurrencyChange(val) {
   settingsCurrencySelect.value = currentCurrency;
   inputCurrencySymbol.textContent = currentCurrency;
   renderApp();
+  sfx.play("click");
   showToast(`Currency set to ${currentCurrency}`, "info");
 }
 
@@ -1377,6 +2004,7 @@ function saveTransactions() {
 // --- GLOBAL RENDER ---
 function renderApp() {
   if (activeView === "dashboard") renderDashboard();
+  else if (activeView === "accounts") renderAccountsView();
   else if (activeView === "transactions") renderLedger();
   else if (activeView === "budgets") renderBudgetsAndGoals();
   else if (activeView === "subscriptions") renderSubscriptions();
@@ -1389,8 +2017,7 @@ function setupServiceWorkerAndNetwork() {
     navigator.serviceWorker.register("./sw.js").catch(() => {});
   }
   function updateNet() {
-    if (navigator.onLine) offlineBanner.classList.add("hidden");
-    else offlineBanner.classList.remove("hidden");
+    offlineBanner.classList.toggle("hidden", navigator.onLine);
   }
   window.addEventListener("online", updateNet);
   window.addEventListener("offline", updateNet);
@@ -1399,6 +2026,7 @@ function setupServiceWorkerAndNetwork() {
 
 function setupShortcuts() {
   window.addEventListener("keydown", (e) => {
+    if (isLocked) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
       e.preventDefault();
       switchView("dashboard");
@@ -1413,6 +2041,8 @@ function setupShortcuts() {
       closeBudgetConfigModal();
       goalModal.classList.add("hidden");
       subModal.classList.add("hidden");
+      accountModal.classList.add("hidden");
+      receiptModal.classList.add("hidden");
       if (editingId !== null) resetForm();
     }
   });
@@ -1428,13 +2058,14 @@ function init() {
   applyTheme(currentTheme);
   setFormType("expense");
   populateFilterCategories();
+  populateAccountDropdowns();
 
   // Navigation Tabs
   navTabs.forEach(tab => {
     tab.addEventListener("click", () => switchView(tab.getAttribute("data-view")));
   });
 
-  // Header quick buttons & cross links
+  // Header quick buttons
   headerQuickAddBtn.addEventListener("click", () => {
     switchView("dashboard");
     textInput.focus();
@@ -1442,13 +2073,21 @@ function init() {
   goToBudgetsTabBtn.addEventListener("click", () => switchView("budgets"));
   goToLedgerBtn.addEventListener("click", () => switchView("transactions"));
 
+  // Smart natural language add
+  smartAddBtn.addEventListener("click", handleSmartAdd);
+  smartInput.addEventListener("keydown", (e) => { if (e.key === "Enter") handleSmartAdd(); });
+
   // Dashboard Controls
   transactionForm.addEventListener("submit", handleFormSubmit);
   cancelEditBtn.addEventListener("click", resetForm);
   typeExpenseBtn.addEventListener("click", () => setFormType("expense"));
   typeIncomeBtn.addEventListener("click", () => setFormType("income"));
+  typeTransferBtn.addEventListener("click", () => setFormType("transfer"));
   currencySelect.addEventListener("change", (e) => handleCurrencyChange(e.target.value));
   themeToggleBtn.addEventListener("click", toggleTheme);
+
+  receiptFileInput.addEventListener("change", handleReceiptUpload);
+  removeReceiptBtn.addEventListener("click", clearReceiptPreview);
 
   chartTabCategory.addEventListener("click", () => {
     chartTabCategory.classList.add("active");
@@ -1463,9 +2102,16 @@ function init() {
     renderDashChart();
   });
 
+  // Accounts Controls
+  openNewAccountModalBtn.addEventListener("click", () => accountModal.classList.remove("hidden"));
+  closeAccountModalBtn.addEventListener("click", () => accountModal.classList.add("hidden"));
+  cancelAccountBtn.addEventListener("click", () => accountModal.classList.add("hidden"));
+  accountForm.addEventListener("submit", handleAccountSubmit);
+
   // Ledger Controls
   searchInput.addEventListener("input", renderLedger);
   filterTypeSelect.addEventListener("change", renderLedger);
+  filterAccountSelect.addEventListener("change", renderLedger);
   filterCategorySelect.addEventListener("change", renderLedger);
   sortBySelect.addEventListener("change", renderLedger);
   selectAllCheckbox.addEventListener("change", handleSelectAll);
@@ -1503,33 +2149,60 @@ function init() {
   subForm.addEventListener("submit", handleSubSubmit);
   processDueSubsBtn.addEventListener("click", processDueSubscriptions);
 
+  // Forecast simulator inputs
+  [forecastInitial, forecastMonthly, forecastRate, forecastYears].forEach(el => {
+    el.addEventListener("input", updateForecastSimulator);
+  });
+
   // Settings Controls
   settingsCurrencySelect.addEventListener("change", (e) => handleCurrencyChange(e.target.value));
   settingsThemeToggle.addEventListener("click", toggleTheme);
+  audioToggle.checked = localStorage.getItem("expense_audio") !== "false";
+  audioToggle.addEventListener("change", (e) => {
+    localStorage.setItem("expense_audio", e.target.checked);
+    showToast(`Audio feedback ${e.target.checked ? "enabled" : "muted"}`, "info");
+  });
   settingsExportJsonBtn.addEventListener("click", exportToJSON);
   settingsExportCsvBtn.addEventListener("click", exportToCSV);
   settingsJsonFileInput.addEventListener("change", handleJsonFileSelect);
   settingsRestoreBtn.addEventListener("click", executeRestore);
   settingsWipeBtn.addEventListener("click", wipeDatabase);
 
-  // Modal backdrop click
+  // Receipt Modal
+  closeReceiptModalBtn.addEventListener("click", () => receiptModal.classList.add("hidden"));
+
+  // Backdrop dismissal
   window.addEventListener("click", (e) => {
     if (e.target === budgetModal) closeBudgetConfigModal();
     if (e.target === goalModal) goalModal.classList.add("hidden");
     if (e.target === subModal) subModal.classList.add("hidden");
+    if (e.target === accountModal) accountModal.classList.add("hidden");
+    if (e.target === receiptModal) receiptModal.classList.add("hidden");
   });
 
+  setupPinListeners();
   setupServiceWorkerAndNetwork();
   setupShortcuts();
+
+  // If PIN lock active at launch
+  if (appPin) {
+    lockApp();
+  } else {
+    pinLockOverlay.classList.add("hidden");
+  }
+
   renderApp();
 }
 
-// Window bindings
+// Window bindings for dynamic inline event handlers
 window.startEditTransaction = startEditTransaction;
 window.removeTransaction = removeTransaction;
 window.openBudgetConfigModal = openBudgetConfigModal;
 window.deleteGoal = deleteGoal;
 window.promptDepositGoal = promptDepositGoal;
 window.deleteSubscription = deleteSubscription;
+window.deleteAccount = deleteAccount;
+window.promptAdjustBalance = promptAdjustBalance;
+window.openReceiptViewer = openReceiptViewer;
 
 init();
