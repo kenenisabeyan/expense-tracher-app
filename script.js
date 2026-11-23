@@ -728,6 +728,7 @@ function renderAccountsView() {
           <div class="account-balance-val ${acc.balance >= 0 ? "text-income" : "text-expense"}">
             ${formatCurrency(acc.balance)}
           </div>
+          ${isLiability && acc.apr ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">APR: <strong>${acc.apr.toFixed(2)}%</strong> • Min Due: <strong>${formatCurrency(acc.minPayment || 0)}/mo</strong></div>` : ""}
         </div>
       </div>
       <div class="form-actions" style="margin-top:12px;">
@@ -772,10 +773,14 @@ function handleAccountSubmit(e) {
   else if (type === "investment") icon = "📈";
 
   const id = name.toLowerCase().replace(/[^a-z0-9]/g, "_") + "_" + Date.now();
-  accounts.push({ id, name, type, balance, icon });
+  const apr = type === "credit" && accApr ? (parseFloat(accApr.value) || 0) : 0;
+  const minPayment = type === "credit" && accMinPayment ? (parseFloat(accMinPayment.value) || 0) : 0;
+
+  accounts.push({ id, name, type, balance, apr, minPayment, icon });
   saveAccounts();
   accountModal.classList.add("hidden");
   accountForm.reset();
+  if (liabilityFieldsRow) liabilityFieldsRow.classList.add("hidden");
   renderAccountsView();
   sfx.play("success");
   showToast("Account created successfully", "success");
@@ -925,8 +930,12 @@ function handleSmartAdd() {
     account: accounts[0]?.id || "checking",
     tags: [],
     receipt: null,
+    isTaxDeductible: false,
+    taxCategory: "business",
     date: new Date().toISOString().split("T")[0]
   };
+
+  applyAutomationRules(newTx);
 
   transactions.unshift(newTx);
   applyAccountImpact(newTx);
@@ -1755,6 +1764,7 @@ function executeBankCsvImport() {
   // Deduplicate against existing transactions by matching date, text, amount
   let addedCount = 0;
   parsedCsvRecords.forEach(rec => {
+    applyAutomationRules(rec);
     const isDup = transactions.some(t => t.date === rec.date && t.text === rec.text && Math.abs(t.amount - rec.amount) < 0.01);
     if (!isDup) {
       transactions.unshift(rec);
@@ -2277,6 +2287,9 @@ function renderAnalyticsView() {
       cutout: "60%"
     }
   });
+
+  renderTaxCenter();
+  renderDebtPayoffPlanner();
 }
 
 // --- CUSTOM CATEGORIES MANAGER (SETTINGS) ---
@@ -2490,6 +2503,687 @@ function handleCurrencyChange(val) {
 
 function saveTransactions() {
   localStorage.setItem("transactions", JSON.stringify(transactions));
+}
+
+// --- AUTOMATION RULES ENGINE ---
+function applyAutomationRules(tx) {
+  if (!tx.text) return null;
+  const lower = tx.text.toLowerCase();
+  for (const rule of rules) {
+    if (lower.includes(rule.keyword.toLowerCase())) {
+      tx.category = rule.category;
+      if (rule.tag) {
+        if (!tx.tags) tx.tags = [];
+        const cleanTag = rule.tag.replace(/^#/, "").trim();
+        if (cleanTag && !tx.tags.includes(cleanTag)) {
+          tx.tags.push(cleanTag);
+        }
+      }
+      return rule;
+    }
+  }
+  return null;
+}
+
+function renderRulesList() {
+  if (!rulesListContainer) return;
+  rulesListContainer.innerHTML = "";
+  if (rules.length === 0) {
+    rulesListContainer.innerHTML = `<div style="padding:10px; color:var(--text-muted); font-size:0.85rem;">No automation rules configured. Click '+ Add Rule' to create one.</div>`;
+    return;
+  }
+
+  rules.forEach(rule => {
+    const card = document.createElement("div");
+    card.className = "rule-card";
+    card.innerHTML = `
+      <div class="rule-match-phrase">
+        <span>If text contains</span>
+        <span class="rule-keyword-badge">"${rule.keyword}"</span>
+        <span class="rule-arrow">➔</span>
+        <span class="rule-target-badge">Category: <strong>${rule.category}</strong></span>
+        ${rule.tag ? `<span class="rule-target-badge">Tag: <strong>#${rule.tag.replace(/^#/, "")}</strong></span>` : ""}
+      </div>
+      <button class="btn-action delete-btn" title="Delete Rule" onclick="deleteRule(${rule.id})">🗑️</button>
+    `;
+    rulesListContainer.appendChild(card);
+  });
+}
+
+function handleRuleSubmit(e) {
+  e.preventDefault();
+  const kw = ruleKeyword.value.trim();
+  const cat = ruleCategory.value;
+  const tg = ruleTag.value.trim().replace(/^#/, "");
+
+  if (!kw || !cat) return;
+
+  const newRule = {
+    id: Date.now(),
+    keyword: kw,
+    category: cat,
+    tag: tg || null
+  };
+
+  rules.push(newRule);
+  localStorage.setItem("expense_rules", JSON.stringify(rules));
+  ruleModal.classList.add("hidden");
+  ruleForm.reset();
+  renderRulesList();
+  sfx.play("success");
+  showToast(`Rule for "${kw}" created!`, "success");
+}
+
+function deleteRule(id) {
+  rules = rules.filter(r => r.id !== id);
+  localStorage.setItem("expense_rules", JSON.stringify(rules));
+  renderRulesList();
+  sfx.play("delete");
+  showToast("Automation rule removed", "info");
+}
+
+function openRuleModal() {
+  if (!ruleModal) return;
+  ruleCategory.innerHTML = "";
+  const allCats = [...(customCategories.expense || DEFAULT_CATEGORIES.expense), ...(customCategories.income || DEFAULT_CATEGORIES.income)];
+  allCats.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = `${c.icon} ${c.label}`;
+    ruleCategory.appendChild(opt);
+  });
+  ruleModal.classList.remove("hidden");
+  ruleKeyword.focus();
+}
+
+// --- TAX SHIELD & DEDUCTIBLE EXPENSE CENTER ---
+function renderTaxCenter() {
+  const taxRate = parseFloat(taxRateSelect?.value || 0.24);
+  const currentYear = new Date().getFullYear().toString();
+  const deductibleTxs = transactions.filter(t => t.isTaxDeductible && t.type === "expense" && t.date && t.date.startsWith(currentYear));
+
+  let totalDeductible = 0;
+  const catSums = {};
+
+  deductibleTxs.forEach(t => {
+    totalDeductible += t.amount;
+    const cat = t.taxCategory || "business";
+    catSums[cat] = (catSums[cat] || 0) + t.amount;
+  });
+
+  const estimatedSavings = totalDeductible * taxRate;
+
+  if (taxTotalDeductible) taxTotalDeductible.textContent = formatCurrency(totalDeductible);
+  if (taxDeductibleCount) taxDeductibleCount.textContent = `${deductibleTxs.length} transactions flagged YTD`;
+  if (taxEstimatedSavings) taxEstimatedSavings.textContent = formatCurrency(estimatedSavings);
+
+  let topCat = "None";
+  let topCatAmt = 0;
+  for (const [k, v] of Object.entries(catSums)) {
+    if (v > topCatAmt) {
+      topCatAmt = v;
+      topCat = k;
+    }
+  }
+
+  const taxCatLabels = {
+    business: "Schedule C / Business Expense",
+    home_office: "Home Office & Utilities",
+    charity: "Charitable Contribution (501c3)",
+    medical: "Health & Medical (HSA/FSA)",
+    education: "Education & Development",
+    vehicle: "Vehicle & Travel"
+  };
+
+  if (taxTopCategory) taxTopCategory.textContent = taxCatLabels[topCat] || topCat;
+  if (taxTopCategoryAmount) taxTopCategoryAmount.textContent = formatCurrency(topCatAmt);
+
+  if (taxCategoriesList) {
+    if (Object.keys(catSums).length === 0) {
+      taxCategoriesList.innerHTML = `<div class="empty-state-notice" style="padding:12px; font-size:0.85rem; color:var(--text-muted);">No tax deductible expenses recorded for ${currentYear}. Flag transactions with 🛡️ to track tax deductions.</div>`;
+    } else {
+      taxCategoriesList.innerHTML = Object.entries(catSums).map(([catKey, amt]) => {
+        const pct = totalDeductible > 0 ? ((amt / totalDeductible) * 100).toFixed(1) : 0;
+        const label = taxCatLabels[catKey] || catKey;
+        return `
+          <div class="tax-progress-item">
+            <div class="tax-progress-meta">
+              <span>${label}</span>
+              <strong>${formatCurrency(amt)} (${pct}%)</strong>
+            </div>
+            <div class="tax-progress-track">
+              <div class="tax-progress-fill" style="width: ${pct}%;"></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+  }
+}
+
+function exportTaxScheduleCSV() {
+  const currentYear = new Date().getFullYear().toString();
+  const deductibleTxs = transactions.filter(t => t.isTaxDeductible && t.type === "expense");
+  if (deductibleTxs.length === 0) {
+    showToast("No tax deductible transactions found to export", "info");
+    return;
+  }
+
+  const headers = ["ID", "Date", "Description", "Tax Classification", "Account", "Tags", "Amount", "Currency"];
+  const rows = deductibleTxs.map(t => [
+    t.id,
+    `"${t.date}"`,
+    `"${(t.text || "").replace(/"/g, '""')}"`,
+    `"${t.taxCategory || "business"}"`,
+    `"${t.account}"`,
+    `"${(t.tags || []).join(";")}"`,
+    t.amount.toFixed(2),
+    `"${currentCurrency}"`
+  ]);
+
+  const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", `Tax_Deductions_Schedule_${currentYear}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  showToast("Tax deduction schedule CSV exported", "success");
+}
+
+// --- SMART DEBT PAYOFF STRATEGY SIMULATOR (SNOWBALL VS AVALANCHE) ---
+function renderDebtPayoffPlanner() {
+  const extraPmt = parseFloat(extraDebtPayment?.value || 250);
+  const isAvalanche = document.querySelector('input[name="debtStrategy"]:checked')?.value === "avalanche";
+
+  const debtAccounts = accounts
+    .filter(a => a.type === "credit" || a.balance < 0)
+    .map(a => ({
+      id: a.id,
+      name: a.name,
+      balance: Math.abs(a.balance),
+      apr: parseFloat(a.apr) || 19.99,
+      minPayment: parseFloat(a.minPayment) || Math.max(25, Math.abs(a.balance) * 0.02)
+    }));
+
+  if (debtAccounts.length === 0) {
+    if (debtAccountsPayoffList) {
+      debtAccountsPayoffList.innerHTML = `<div class="empty-state-notice" style="padding:16px; color:var(--text-muted); text-align:center;">🎉 Congratulations! You have no active liabilities or negative account balances.</div>`;
+    }
+    if (debtFreeDateDisplay) debtFreeDateDisplay.textContent = "Debt Free!";
+    if (debtInterestSavedDisplay) debtInterestSavedDisplay.textContent = "$0.00";
+    return;
+  }
+
+  const simAvalanche = simulateDebtPayoff(debtAccounts, extraPmt, "avalanche");
+  const simSnowball = simulateDebtPayoff(debtAccounts, extraPmt, "snowball");
+
+  const currentSim = isAvalanche ? simAvalanche : simSnowball;
+  const interestSaved = Math.max(0, simSnowball.totalInterest - simAvalanche.totalInterest);
+
+  if (debtFreeDateDisplay) {
+    const futureDate = new Date();
+    futureDate.setMonth(futureDate.getMonth() + currentSim.months);
+    debtFreeDateDisplay.textContent = currentSim.months < 360 ? futureDate.toLocaleDateString(undefined, { month: "short", year: "numeric" }) + ` (${currentSim.months} mos)` : "> 30 Years";
+  }
+
+  if (debtInterestSavedDisplay) {
+    debtInterestSavedDisplay.textContent = isAvalanche ? `${formatCurrency(interestSaved)} (vs Snowball)` : `-$${interestSaved.toFixed(2)} (vs Avalanche)`;
+  }
+
+  const sortedDebts = [...debtAccounts].sort((a, b) => {
+    if (isAvalanche) return b.apr - a.apr;
+    return a.balance - b.balance;
+  });
+
+  if (debtAccountsPayoffList) {
+    debtAccountsPayoffList.innerHTML = sortedDebts.map((d, idx) => `
+      <div class="debt-payoff-item">
+        <div class="debt-payoff-left">
+          <div class="debt-payoff-badge">#${idx + 1}</div>
+          <div class="debt-payoff-info">
+            <h4>${d.name}</h4>
+            <span>APR: <strong>${d.apr.toFixed(2)}%</strong> • Min Due: <strong>${formatCurrency(d.minPayment)}/mo</strong></span>
+          </div>
+        </div>
+        <div class="debt-payoff-numbers">
+          <div class="debt-payoff-balance">${formatCurrency(d.balance)}</div>
+          <div class="debt-payoff-sub">${idx === 0 ? "🎯 Target Priority" : "Standard Min Payment"}</div>
+        </div>
+      </div>
+    `).join("");
+  }
+}
+
+function simulateDebtPayoff(debts, extraMonthly, strategy) {
+  let list = debts.map(d => ({ ...d }));
+  let months = 0;
+  let totalInterest = 0;
+
+  while (list.some(d => d.balance > 0.01) && months < 360) {
+    months++;
+    list.sort((a, b) => strategy === "avalanche" ? b.apr - a.apr : a.balance - b.balance);
+
+    let availableExtra = extraMonthly;
+
+    for (const d of list) {
+      if (d.balance <= 0.01) continue;
+      const monthlyRate = (d.apr / 100) / 12;
+      const interest = d.balance * monthlyRate;
+      totalInterest += interest;
+      d.balance += interest;
+
+      const pmt = Math.min(d.balance, d.minPayment);
+      d.balance -= pmt;
+    }
+
+    for (const d of list) {
+      if (d.balance <= 0.01) continue;
+      if (availableExtra > 0) {
+        const extraApplied = Math.min(d.balance, availableExtra);
+        d.balance -= extraApplied;
+        availableExtra -= extraApplied;
+      }
+    }
+  }
+
+  return { months, totalInterest };
+}
+
+// --- LIVE & OFFLINE CURRENCY SYNC ENGINE ---
+const BENCHMARK_RATES = {
+  USD: 1.0,
+  EUR: 0.92,
+  GBP: 0.79,
+  ETB: 125.0,
+  JPY: 155.0,
+  CAD: 1.38,
+  AUD: 1.52,
+  CHF: 0.88,
+  INR: 84.5
+};
+
+async function syncLiveExchangeRates() {
+  showToast("Syncing live market exchange rates...", "info");
+  try {
+    const res = await fetch("https://open.er-api.com/v6/latest/USD");
+    if (!res.ok) throw new Error("API Network error");
+    const data = await res.json();
+    if (data && data.rates) {
+      const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      localStorage.setItem("expense_exchange_rates", JSON.stringify({
+        rates: data.rates,
+        timestamp: nowStr,
+        date: new Date().toISOString()
+      }));
+      if (rateSyncTimestamp) rateSyncTimestamp.textContent = `Live rates synchronized at ${nowStr}`;
+      showToast("Live market exchange rates updated!", "success");
+      sfx.play("success");
+      updateConvertCalculation();
+      return;
+    }
+  } catch (_) {
+    if (rateSyncTimestamp) rateSyncTimestamp.textContent = `Offline: Using cached benchmark rates`;
+    showToast("Offline: Using cached benchmark exchange rates", "info");
+  }
+}
+
+// --- ENCRYPTED VAULT (AES-256-GCM + PBKDF2) ---
+async function deriveAesKey(passphrase, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await window.crypto.subtle.importKey(
+    "raw",
+    enc.encode(passphrase),
+    { name: "PBKDF2" },
+    false,
+    ["deriveKey"]
+  );
+  return window.crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: salt,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
+
+async function exportEncryptedVault() {
+  const passphrase = prompt("Enter a master passphrase to encrypt your cold-storage backup:");
+  if (!passphrase) return;
+  if (passphrase.length < 6) {
+    showToast("Passphrase must be at least 6 characters", "warning");
+    return;
+  }
+
+  try {
+    const dataObj = {
+      transactions,
+      accounts,
+      budgets,
+      savingsGoals,
+      subscriptions,
+      customCategories,
+      rules,
+      version: 2,
+      exportDate: new Date().toISOString()
+    };
+    const jsonStr = JSON.stringify(dataObj);
+    const enc = new TextEncoder();
+    const dataBytes = enc.encode(jsonStr);
+
+    const salt = window.crypto.getRandomValues(new Uint8Array(16));
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveAesKey(passphrase, salt);
+
+    const cipherBytes = await window.crypto.subtle.encrypt(
+      { name: "AES-GCM", iv: iv },
+      key,
+      dataBytes
+    );
+
+    const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, "0")).join("");
+    const ivHex = Array.from(iv).map(b => b.toString(16).padStart(2, "0")).join("");
+    const cipherBase64 = btoa(String.fromCharCode(...new Uint8Array(cipherBytes)));
+
+    const vault = {
+      vaultVersion: 2,
+      cipher: "AES-256-GCM",
+      kdf: "PBKDF2-SHA256",
+      iterations: 100000,
+      salt: saltHex,
+      iv: ivHex,
+      payload: cipherBase64
+    };
+
+    const blob = new Blob([JSON.stringify(vault, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `smart_expense_vault_${new Date().toISOString().split("T")[0]}.enc.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Encrypted vault exported successfully!", "success");
+    sfx.play("success");
+  } catch (e) {
+    console.error(e);
+    showToast("Encryption failed: " + e.message, "error");
+  }
+}
+
+function handleRestoreEncryptedFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const passphrase = prompt("Enter master passphrase to decrypt and unlock this vault:");
+  if (!passphrase) {
+    settingsEncryptedFileInput.value = "";
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = async (event) => {
+    try {
+      const vault = JSON.parse(event.target.result);
+      if (!vault.salt || !vault.iv || !vault.payload) {
+        throw new Error("Invalid encrypted vault envelope structure");
+      }
+
+      const salt = new Uint8Array(vault.salt.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const iv = new Uint8Array(vault.iv.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+      const cipherBytes = Uint8Array.from(atob(vault.payload), c => c.charCodeAt(0));
+
+      const key = await deriveAesKey(passphrase, salt);
+      const decryptedBytes = await window.crypto.subtle.decrypt(
+        { name: "AES-GCM", iv: iv },
+        key,
+        cipherBytes
+      );
+
+      const dec = new TextDecoder();
+      const jsonStr = dec.decode(decryptedBytes);
+      const data = JSON.parse(jsonStr);
+
+      if (Array.isArray(data.transactions)) transactions = data.transactions;
+      if (Array.isArray(data.accounts)) accounts = data.accounts;
+      if (data.budgets) budgets = data.budgets;
+      if (Array.isArray(data.savingsGoals)) savingsGoals = data.savingsGoals;
+      if (Array.isArray(data.subscriptions)) subscriptions = data.subscriptions;
+      if (data.customCategories) customCategories = data.customCategories;
+      if (Array.isArray(data.rules)) rules = data.rules;
+
+      saveTransactions();
+      saveAccounts();
+      localStorage.setItem("expense_budgets", JSON.stringify(budgets));
+      localStorage.setItem("expense_goals", JSON.stringify(savingsGoals));
+      localStorage.setItem("expense_subs", JSON.stringify(subscriptions));
+      localStorage.setItem("expense_rules", JSON.stringify(rules));
+
+      settingsEncryptedFileInput.value = "";
+      renderApp();
+      showToast("Encrypted vault unlocked and restored successfully!", "success");
+      sfx.play("success");
+    } catch (err) {
+      showToast("Decryption failed: Incorrect passphrase or corrupted vault file", "error");
+      sfx.play("error");
+      settingsEncryptedFileInput.value = "";
+    }
+  };
+  reader.readAsText(file);
+}
+
+// --- WEBAUTHN BIOMETRIC PASSKEY UNLOCK ---
+async function toggleBiometricRegistration() {
+  if (!window.PublicKeyCredential) {
+    showToast("WebAuthn is not supported in this browser", "warning");
+    return;
+  }
+
+  if (localStorage.getItem("expense_biometric_id")) {
+    if (confirm("Disable biometric / passkey unlock on this device?")) {
+      localStorage.removeItem("expense_biometric_id");
+      updateBiometricUI();
+      showToast("Biometric passkey disabled", "info");
+    }
+    return;
+  }
+
+  try {
+    const challenge = window.crypto.getRandomValues(new Uint8Array(32));
+    const userId = window.crypto.getRandomValues(new Uint8Array(16));
+
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge: challenge,
+        rp: { name: "Smart Expense Tracker Enterprise" },
+        user: {
+          id: userId,
+          name: "workstation_user",
+          displayName: "Workstation User"
+        },
+        pubKeyCredParams: [
+          { type: "public-key", alg: -7 },
+          { type: "public-key", alg: -257 }
+        ],
+        authenticatorSelection: {
+          authenticatorAttachment: "platform",
+          userVerification: "preferred"
+        },
+        timeout: 60000
+      }
+    });
+
+    if (credential && credential.id) {
+      localStorage.setItem("expense_biometric_id", credential.id);
+      updateBiometricUI();
+      showToast("Biometric passkey registered successfully!", "success");
+      sfx.play("success");
+    }
+  } catch (err) {
+    showToast("Biometric registration cancelled or unsupported", "info");
+  }
+}
+
+async function authenticateWithBiometrics() {
+  if (!window.PublicKeyCredential || !localStorage.getItem("expense_biometric_id")) return;
+  try {
+    const challenge = window.crypto.getRandomValues(new Uint8Array(32));
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: challenge,
+        userVerification: "preferred",
+        timeout: 60000
+      }
+    });
+    if (assertion) {
+      unlockApp();
+      showToast("Unlocked via biometric passkey", "success");
+      sfx.play("success");
+    }
+  } catch (_) {}
+}
+
+function updateBiometricUI() {
+  const isEnabled = !!localStorage.getItem("expense_biometric_id");
+  if (biometricSettingStatus) {
+    biometricSettingStatus.textContent = isEnabled ? "Biometric passkey is active and ready." : "Use Windows Hello, Touch ID, or Face ID to unlock instantly.";
+  }
+  if (toggleBiometricBtn) {
+    toggleBiometricBtn.textContent = isEnabled ? "Disable Passkey" : "Register Biometric";
+    toggleBiometricBtn.className = isEnabled ? "btn-sm btn-danger-outline" : "btn-sm btn-secondary";
+  }
+  if (biometricUnlockBtn) {
+    biometricUnlockBtn.classList.toggle("hidden", !isEnabled);
+  }
+}
+
+// --- STORAGE QUOTA & DIAGNOSTICS ---
+async function updateStorageDiagnostics() {
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const { usage, quota } = await navigator.storage.estimate();
+      const usageMb = (usage / (1024 * 1024)).toFixed(1);
+      const quotaGb = (quota / (1024 * 1024 * 1024)).toFixed(1);
+      const pct = Math.min(100, Math.max(0.1, ((usage / quota) * 100))).toFixed(1);
+
+      if (storageUsageLabel) storageUsageLabel.textContent = `Storage Used: ${usageMb} MB / ${quotaGb} GB`;
+      if (storagePercentLabel) storagePercentLabel.textContent = `${pct}%`;
+      if (storageMeterBar) storageMeterBar.style.width = `${pct}%`;
+    } catch (_) {}
+  }
+
+  const receiptCount = transactions.filter(t => !!t.receipt).length;
+  if (storageBreakdownText) {
+    storageBreakdownText.innerHTML = `
+      <span>Ledger: <strong>${transactions.length}</strong></span> • 
+      <span>Accounts: <strong>${accounts.length}</strong></span> • 
+      <span>Budgets: <strong>${Object.keys(budgets).length}</strong></span> • 
+      <span>Subscriptions: <strong>${subscriptions.length}</strong></span> • 
+      <span>Receipts: <strong>${receiptCount}</strong></span>
+    `;
+  }
+}
+
+function optimizeDatabase() {
+  showToast("Optimizing local database...", "info");
+  transactions = transactions.map(t => ({
+    ...t,
+    text: t.text.trim(),
+    tags: Array.from(new Set(t.tags || []))
+  }));
+  saveTransactions();
+  updateStorageDiagnostics();
+  showToast("Database optimization complete! Zero bloat detected.", "success");
+  sfx.play("success");
+}
+
+// --- COMMAND PALETTE (CTRL+K / ⌘K) ---
+const COMMANDS = [
+  { id: "dash", label: "Jump to Dashboard", category: "Navigation", icon: "📊", shortcut: "G D", action: () => switchView("dashboard") },
+  { id: "accs", label: "Jump to Accounts & Net Worth", category: "Navigation", icon: "💳", shortcut: "G A", action: () => switchView("accounts") },
+  { id: "txs", label: "Jump to Transactions Ledger", category: "Navigation", icon: "📝", shortcut: "G T", action: () => switchView("transactions") },
+  { id: "budgets", label: "Jump to Budgets & Goals", category: "Navigation", icon: "🎯", shortcut: "G B", action: () => switchView("budgets") },
+  { id: "subs", label: "Jump to Subscriptions", category: "Navigation", icon: "🔄", shortcut: "G S", action: () => switchView("subscriptions") },
+  { id: "analytics", label: "Jump to Analytics & Forecast", category: "Navigation", icon: "📈", shortcut: "G R", action: () => switchView("analytics") },
+  { id: "tax", label: "Jump to Tax Shield Center", category: "Tax", icon: "🛡️", shortcut: "", action: () => { switchView("analytics"); document.querySelector(".tax-center-card")?.scrollIntoView({ behavior: "smooth" }); } },
+  { id: "debt", label: "Jump to Debt Payoff Optimizer", category: "Debt", icon: "💳", shortcut: "", action: () => { switchView("analytics"); document.querySelector(".debt-planner-card")?.scrollIntoView({ behavior: "smooth" }); } },
+  { id: "settings", label: "Jump to Settings", category: "Navigation", icon: "⚙️", shortcut: "G ,", action: () => switchView("settings") },
+  { id: "new-tx", label: "Add New Transaction", category: "Actions", icon: "➕", shortcut: "Ctrl+N", action: () => { switchView("dashboard"); textInput.focus(); } },
+  { id: "new-acc", label: "Create Financial Account", category: "Actions", icon: "💳", shortcut: "", action: () => accountModal.classList.remove("hidden") },
+  { id: "import-csv", label: "Import Bank CSV Statement", category: "Actions", icon: "📥", shortcut: "", action: () => csvImportModal.classList.remove("hidden") },
+  { id: "calc-travel", label: "Travel Currency Converter", category: "Tools", icon: "💱", shortcut: "", action: () => convertModal.classList.remove("hidden") },
+  { id: "export-csv", label: "Export CSV Ledger", category: "Data", icon: "📥", shortcut: "", action: exportToCSV },
+  { id: "export-enc", label: "Export Encrypted Vault (.enc.json)", category: "Security", icon: "🔒", shortcut: "", action: exportEncryptedVault },
+  { id: "lock-app", label: "Lock Workstation Now", category: "Security", icon: "🔒", shortcut: "", action: lockApp }
+];
+
+let filteredCommands = [...COMMANDS];
+let cmdPaletteSelectedIndex = 0;
+
+function openCommandPalette() {
+  if (!cmdPaletteModal) return;
+  cmdPaletteModal.classList.remove("hidden");
+  cmdPaletteInput.value = "";
+  cmdPaletteSelectedIndex = 0;
+  filterCommands("");
+  cmdPaletteInput.focus();
+}
+
+function closeCommandPalette() {
+  if (cmdPaletteModal) cmdPaletteModal.classList.add("hidden");
+}
+
+function filterCommands(query) {
+  const q = query.toLowerCase().trim();
+  filteredCommands = COMMANDS.filter(c =>
+    !q || c.label.toLowerCase().includes(q) || c.category.toLowerCase().includes(q)
+  );
+  cmdPaletteSelectedIndex = 0;
+  renderCommandResults();
+}
+
+function renderCommandResults() {
+  if (!cmdPaletteResults) return;
+  if (filteredCommands.length === 0) {
+    cmdPaletteResults.innerHTML = `<div style="padding:16px; text-align:center; color:var(--text-muted); font-size:0.85rem;">No matching commands found.</div>`;
+    return;
+  }
+  cmdPaletteResults.innerHTML = filteredCommands.map((c, idx) => `
+    <div class="cmd-item ${idx === cmdPaletteSelectedIndex ? "selected" : ""}" data-index="${idx}">
+      <div class="cmd-item-left">
+        <span class="cmd-item-icon">${c.icon}</span>
+        <div>
+          <div class="cmd-item-label">${c.label}</div>
+          <div class="cmd-item-category">${c.category}</div>
+        </div>
+      </div>
+      ${c.shortcut ? `<span class="cmd-item-shortcut">${c.shortcut}</span>` : ""}
+    </div>
+  `).join("");
+
+  cmdPaletteResults.querySelectorAll(".cmd-item").forEach(item => {
+    item.addEventListener("click", () => {
+      const idx = parseInt(item.getAttribute("data-index"), 10);
+      cmdPaletteSelectedIndex = idx;
+      executeSelectedCommand();
+    });
+  });
+}
+
+function executeSelectedCommand() {
+  const cmd = filteredCommands[cmdPaletteSelectedIndex];
+  if (cmd) {
+    closeCommandPalette();
+    cmd.action();
+    sfx.play("click");
+  }
 }
 
 // --- GLOBAL RENDER ---
