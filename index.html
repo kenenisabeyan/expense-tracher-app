@@ -703,6 +703,43 @@
           </div>
         </div>
 
+        <!-- Forward Cash Flow Runway & Safe Daily Spend Engine (30/60/90 Days) -->
+        <div class="card full-width-card runway-forecast-card">
+          <div class="card-header">
+            <div>
+              <h3>🔮 Forward Cash Flow Runway & Safe Daily Spend</h3>
+              <p class="card-subtext">Day-by-day cash trajectory projecting upcoming bills, subscriptions, and safe discretionary burn</p>
+            </div>
+            <div class="runway-horizon-selector" id="runwayHorizonSelector">
+              <button type="button" class="horizon-pill active" data-days="30">30 Days</button>
+              <button type="button" class="horizon-pill" data-days="60">60 Days</button>
+              <button type="button" class="horizon-pill" data-days="90">90 Days</button>
+            </div>
+          </div>
+
+          <div class="runway-stats-grid">
+            <div class="runway-stat-box">
+              <span class="runway-stat-label">Daily Safe Spend Limit</span>
+              <h3 id="runwayDailyLimit" class="text-income">$0.00 / day</h3>
+              <span class="runway-stat-sub">Discretionary capital limit</span>
+            </div>
+            <div class="runway-stat-box">
+              <span class="runway-stat-label">Projected Horizon Balance</span>
+              <h3 id="runwayHorizonBalance">$0.00</h3>
+              <span class="runway-stat-sub" id="runwayHorizonDate">End of period</span>
+            </div>
+            <div class="runway-stat-box">
+              <span class="runway-stat-label">Committed Upcoming Bills</span>
+              <h3 id="runwayCommittedBills" class="text-expense">$0.00</h3>
+              <span class="runway-stat-sub" id="runwayBillsCount">0 scheduled charges</span>
+            </div>
+          </div>
+
+          <div class="chart-container" style="min-height: 260px; margin-top: 14px;">
+            <canvas id="runwayProjectionChart"></canvas>
+          </div>
+        </div>
+
         <!-- Tax Shield & Deductible Expense Center -->
         <div class="card full-width-card tax-center-card">
           <div class="card-header">
@@ -1056,6 +1093,30 @@
       <div class="file-upload-box">
         <input type="file" id="bankCsvFileInput" accept=".csv" class="file-input">
       </div>
+      <!-- Flexible Column Mapping Section -->
+      <div id="csvColumnMappingSection" class="csv-mapping-section hidden">
+        <h4>CSV Column Headers Configuration</h4>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="csvColDate">Date Column</label>
+            <select id="csvColDate"></select>
+          </div>
+          <div class="form-group flex-1">
+            <label for="csvColDesc">Description Column</label>
+            <select id="csvColDesc"></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="csvColAmount">Amount Column</label>
+            <select id="csvColAmount"></select>
+          </div>
+          <div class="form-group flex-1">
+            <label for="csvTargetAccount">Target Account</label>
+            <select id="csvTargetAccount"></select>
+          </div>
+        </div>
+      </div>
       <div id="csvPreviewContainer" class="csv-preview-container hidden">
         <h4>Preview (<span id="csvParsedRowCount">0</span> rows detected)</h4>
         <div id="csvSampleRows" class="csv-sample-rows"></div>
@@ -1273,6 +1334,86 @@
           <button type="submit" class="btn btn-primary">Save Automation Rule</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- ========================================================
+         MODAL: NOTIFICATION & FINANCIAL ALERTS DRAWER
+         ======================================================== -->
+  <div id="notificationModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Financial Alerts & Notifications">
+    <div class="modal-card notification-modal-card">
+      <div class="modal-header">
+        <div class="notification-title-group">
+          <h3>🔔 Financial Alerts & Notifications</h3>
+          <span id="unreadNotificationsPill" class="badge">0 Alerts</span>
+        </div>
+        <button class="modal-close-btn" id="closeNotificationModalBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="notification-list" id="notificationListContainer"></div>
+      <div class="modal-actions" style="justify-content: space-between;">
+        <button type="button" class="btn btn-secondary" id="clearNotificationsBtn">Clear All</button>
+        <button type="button" class="btn btn-primary" id="closeNotificationActionBtn">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+         MODAL: GAAP FINANCIAL STATEMENTS & BALANCE SHEET
+         ======================================================== -->
+  <div id="statementsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Financial Statements">
+    <div class="modal-card statements-modal-card">
+      <div class="modal-header">
+        <div>
+          <h3>📑 Financial Statements & Balance Sheet</h3>
+          <p class="modal-description">GAAP-structured Statement of Financial Position & Operating Profit/Loss (P&L)</p>
+        </div>
+        <button class="modal-close-btn" id="closeStatementsModalBtn" aria-label="Close">&times;</button>
+      </div>
+
+      <div class="statement-tabs-group">
+        <button type="button" class="statement-tab active" id="tabBalanceSheet">Balance Sheet</button>
+        <button type="button" class="statement-tab" id="tabProfitLoss">Profit & Loss (P&L)</button>
+      </div>
+
+      <div class="statement-content" id="statementContentContainer"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="closeStatementsActionBtn">Close</button>
+        <button type="button" class="btn btn-primary" id="printStatementBtn">🖨️ Print Statement</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+         MODAL: KEYBOARD SHORTCUTS CHEATSHEET (?)
+         ======================================================== -->
+  <div id="shortcutsModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Keyboard Shortcuts">
+    <div class="modal-card shortcuts-modal-card">
+      <div class="modal-header">
+        <h3>⌨️ Keyboard Navigation Cheatsheet</h3>
+        <button class="modal-close-btn" id="closeShortcutsModalBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="shortcuts-grid">
+        <div class="shortcut-group">
+          <h4>Navigation</h4>
+          <div class="shortcut-row"><span>Jump to Dashboard</span><div><kbd>G</kbd> <kbd>D</kbd></div></div>
+          <div class="shortcut-row"><span>Jump to Accounts</span><div><kbd>G</kbd> <kbd>A</kbd></div></div>
+          <div class="shortcut-row"><span>Jump to Transactions</span><div><kbd>G</kbd> <kbd>T</kbd></div></div>
+          <div class="shortcut-row"><span>Jump to Budgets</span><div><kbd>G</kbd> <kbd>B</kbd></div></div>
+          <div class="shortcut-row"><span>Jump to Subscriptions</span><div><kbd>G</kbd> <kbd>S</kbd></div></div>
+          <div class="shortcut-row"><span>Jump to Analytics</span><div><kbd>G</kbd> <kbd>R</kbd></div></div>
+          <div class="shortcut-row"><span>Jump to Settings</span><div><kbd>G</kbd> <kbd>,</kbd></div></div>
+        </div>
+        <div class="shortcut-group">
+          <h4>Commands & Actions</h4>
+          <div class="shortcut-row"><span>Command Palette</span><div><kbd>Ctrl</kbd>+<kbd>K</kbd></div></div>
+          <div class="shortcut-row"><span>New Transaction</span><div><kbd>Ctrl</kbd>+<kbd>N</kbd></div></div>
+          <div class="shortcut-row"><span>Category Budgets</span><div><kbd>Ctrl</kbd>+<kbd>B</kbd></div></div>
+          <div class="shortcut-row"><span>Print Statement</span><div><kbd>Ctrl</kbd>+<kbd>P</kbd></div></div>
+          <div class="shortcut-row"><span>Shortcut Reference</span><div><kbd>?</kbd></div></div>
+          <div class="shortcut-row"><span>Close / Dismiss</span><div><kbd>ESC</kbd></div></div>
+        </div>
+      </div>
     </div>
   </div>
 
