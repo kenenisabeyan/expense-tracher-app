@@ -90,9 +90,20 @@
           ➕ <span>New Entry</span>
         </button>
 
+        <!-- Notifications Bell Button -->
+        <button id="headerNotificationBtn" class="btn-icon notification-btn" title="Financial Alerts & Insights" aria-label="Notifications">
+          <span>🔔</span>
+          <span id="notificationBadge" class="notification-badge hidden">0</span>
+        </button>
+
         <!-- Currency Converter Modal Trigger -->
         <button id="headerConvertBtn" class="btn-icon" title="Travel Currency Converter" aria-label="Currency Converter">
           💱
+        </button>
+
+        <!-- Keyboard Shortcuts Help Button -->
+        <button id="headerShortcutsBtn" class="btn-icon" title="Keyboard Shortcuts (?)" aria-label="Keyboard Shortcuts">
+          ⌨️
         </button>
 
         <!-- Lock Now Button -->
@@ -123,6 +134,8 @@
             <option value="light">☀️ Light</option>
             <option value="dark">🌙 Dark</option>
             <option value="oled">🖤 OLED</option>
+            <option value="emerald">🌲 Emerald</option>
+            <option value="sapphire">💎 Sapphire</option>
             <option value="system">🖥️ System</option>
           </select>
         </div>
@@ -381,7 +394,10 @@
             <span>Total Liabilities: <strong id="totalLiabilitiesDisplay" class="text-expense">$0.00</strong></span>
           </div>
         </div>
-        <button id="openNewAccountModalBtn" class="btn btn-primary" style="width: auto;">➕ Add New Account</button>
+        <div class="accounts-banner-actions">
+          <button id="openFinancialStatementsBtn" class="btn btn-secondary" style="width: auto;">📑 Statements & Balance Sheet</button>
+          <button id="openNewAccountModalBtn" class="btn btn-primary" style="width: auto;">➕ Add New Account</button>
+        </div>
       </div>
 
       <div class="accounts-grid" id="accountsGrid">
