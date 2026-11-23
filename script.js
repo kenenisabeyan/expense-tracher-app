@@ -30,10 +30,10 @@ const DEFAULT_CATEGORIES = {
 let customCategories = JSON.parse(localStorage.getItem("expense_custom_categories")) || DEFAULT_CATEGORIES;
 
 const DEFAULT_ACCOUNTS = [
-  { id: "checking", name: "Main Checking", type: "checking", balance: 3450.00, icon: "💳" },
-  { id: "savings", name: "High-Yield Savings", type: "savings", balance: 12800.00, icon: "🏦" },
-  { id: "credit", name: "Credit Card", type: "credit", balance: -450.00, icon: "💳" },
-  { id: "cash", name: "Cash Wallet", type: "cash", balance: 120.00, icon: "💵" }
+  { id: "checking", name: "Main Checking", type: "checking", balance: 3450.00, apr: 0, minPayment: 0, icon: "💳" },
+  { id: "savings", name: "High-Yield Savings", type: "savings", balance: 12800.00, apr: 0, minPayment: 0, icon: "🏦" },
+  { id: "credit", name: "Credit Card", type: "credit", balance: -450.00, apr: 19.99, minPayment: 35.00, icon: "💳" },
+  { id: "cash", name: "Cash Wallet", type: "cash", balance: 120.00, apr: 0, minPayment: 0, icon: "💵" }
 ];
 
 const DEFAULT_BUDGETS = {
@@ -53,6 +53,18 @@ const DEFAULT_SUBS = [
   { id: 1, name: "Netflix Subscription", amount: 15.99, frequency: "monthly", category: "Entertainment", nextDate: "2026-12-05" },
   { id: 2, name: "Gym Membership", amount: 45.00, frequency: "monthly", category: "Healthcare", nextDate: "2026-12-01" }
 ];
+
+const DEFAULT_RULES = [
+  { id: 1, keyword: "uber", category: "Transportation", tag: "commute" },
+  { id: 2, keyword: "lyft", category: "Transportation", tag: "commute" },
+  { id: 3, keyword: "netflix", category: "Entertainment", tag: "subscription" },
+  { id: 4, keyword: "spotify", category: "Entertainment", tag: "subscription" },
+  { id: 5, keyword: "starbucks", category: "Food & Drinks", tag: "coffee" },
+  { id: 6, keyword: "whole foods", category: "Food & Drinks", tag: "groceries" },
+  { id: 7, keyword: "shell", category: "Transportation", tag: "fuel" }
+];
+
+let rules = JSON.parse(localStorage.getItem("expense_rules")) || DEFAULT_RULES;
 
 // --- WEB AUDIO API SYNTHESIZER ---
 class SoundEffects {
@@ -174,6 +186,8 @@ let transactions = rawTransactions.map(t => ({
   tags: Array.isArray(t.tags) ? t.tags : (t.tags ? String(t.tags).split(",").map(s => s.trim().replace(/^#/, "")).filter(Boolean) : []),
   splits: Array.isArray(t.splits) ? t.splits : null,
   receipt: t.receipt || null,
+  isTaxDeductible: !!t.isTaxDeductible,
+  taxCategory: t.taxCategory || "business",
   date: t.date || new Date().toISOString().split("T")[0]
 }));
 
@@ -381,6 +395,72 @@ const executeCsvImportBtn = document.getElementById("executeCsvImportBtn");
 const headerQuickAddBtn = document.getElementById("headerQuickAddBtn");
 const goToBudgetsTabBtn = document.getElementById("goToBudgetsTabBtn");
 const goToLedgerBtn = document.getElementById("goToLedgerBtn");
+
+// Header and Network elements
+const headerCmdPaletteBtn = document.getElementById("headerCmdPaletteBtn");
+const networkStatusBadge = document.getElementById("networkStatusBadge");
+const biometricUnlockBtn = document.getElementById("biometricUnlockBtn");
+
+// Tax & Liability Elements
+const taxDeductibleCheckbox = document.getElementById("taxDeductibleCheckbox");
+const taxCategoryGroup = document.getElementById("taxCategoryGroup");
+const taxCategorySelect = document.getElementById("taxCategorySelect");
+const filterTaxSelect = document.getElementById("filterTax");
+const accApr = document.getElementById("accApr");
+const accMinPayment = document.getElementById("accMinPayment");
+const liabilityFieldsRow = document.getElementById("liabilityFieldsRow");
+
+// Tax Center Elements
+const taxRateSelect = document.getElementById("taxRateSelect");
+const exportTaxScheduleBtn = document.getElementById("exportTaxScheduleBtn");
+const taxTotalDeductible = document.getElementById("taxTotalDeductible");
+const taxDeductibleCount = document.getElementById("taxDeductibleCount");
+const taxEstimatedSavings = document.getElementById("taxEstimatedSavings");
+const taxTopCategory = document.getElementById("taxTopCategory");
+const taxTopCategoryAmount = document.getElementById("taxTopCategoryAmount");
+const taxCategoriesList = document.getElementById("taxCategoriesList");
+
+// Debt Optimizer Elements
+const extraDebtPayment = document.getElementById("extraDebtPayment");
+const debtFreeDateDisplay = document.getElementById("debtFreeDateDisplay");
+const debtInterestSavedDisplay = document.getElementById("debtInterestSavedDisplay");
+const debtAccountsPayoffList = document.getElementById("debtAccountsPayoffList");
+
+// Automation Rules Elements
+const rulesListContainer = document.getElementById("rulesListContainer");
+const openNewRuleModalBtn = document.getElementById("openNewRuleModalBtn");
+const ruleModal = document.getElementById("ruleModal");
+const closeRuleModalBtn = document.getElementById("closeRuleModalBtn");
+const cancelRuleBtn = document.getElementById("cancelRuleBtn");
+const ruleForm = document.getElementById("ruleForm");
+const ruleKeyword = document.getElementById("ruleKeyword");
+const ruleCategory = document.getElementById("ruleCategory");
+const ruleTag = document.getElementById("ruleTag");
+
+// Encrypted Vault & Storage Diagnostics Elements
+const settingsExportEncryptedBtn = document.getElementById("settingsExportEncryptedBtn");
+const settingsRestoreEncryptedBtn = document.getElementById("settingsRestoreEncryptedBtn");
+const settingsEncryptedFileInput = document.getElementById("settingsEncryptedFileInput");
+const storageUsageLabel = document.getElementById("storageUsageLabel");
+const storagePercentLabel = document.getElementById("storagePercentLabel");
+const storageMeterBar = document.getElementById("storageMeterBar");
+const storageBreakdownText = document.getElementById("storageBreakdownText");
+const optimizeDatabaseBtn = document.getElementById("optimizeDatabaseBtn");
+
+// Biometric Settings Elements
+const biometricSettingRow = document.getElementById("biometricSettingRow");
+const biometricSettingStatus = document.getElementById("biometricSettingStatus");
+const toggleBiometricBtn = document.getElementById("toggleBiometricBtn");
+
+// Currency Sync Elements
+const syncLiveRatesBtn = document.getElementById("syncLiveRatesBtn");
+const rateSyncTimestamp = document.getElementById("rateSyncTimestamp");
+
+// Command Palette Elements
+const cmdPaletteModal = document.getElementById("cmdPaletteModal");
+const cmdPaletteInput = document.getElementById("cmdPaletteInput");
+const cmdPaletteResults = document.getElementById("cmdPaletteResults");
+const closeCmdPaletteBtn = document.getElementById("closeCmdPaletteBtn");
 
 // --- HELPER UTILITIES ---
 function formatCurrency(amount) {
@@ -930,6 +1010,8 @@ function resetForm() {
   splitCheckbox.checked = false;
   splitSection.classList.add("hidden");
   splitRowsContainer.innerHTML = "";
+  if (taxDeductibleCheckbox) taxDeductibleCheckbox.checked = false;
+  if (taxCategoryGroup) taxCategoryGroup.classList.add("hidden");
   setFormType("expense");
   editingId = null;
   formTitle.textContent = "Add New Transaction";
@@ -954,6 +1036,14 @@ function startEditTransaction(id) {
   accountSelect.value = target.account || accounts[0]?.id || "checking";
   dateInput.value = target.date;
   tagsInput.value = (target.tags || []).join(", ");
+
+  if (taxDeductibleCheckbox) {
+    taxDeductibleCheckbox.checked = !!target.isTaxDeductible;
+    if (taxCategoryGroup) {
+      taxCategoryGroup.classList.toggle("hidden", !target.isTaxDeductible);
+      if (taxCategorySelect) taxCategorySelect.value = target.taxCategory || "business";
+    }
+  }
 
   setFormType(target.type);
   if (target.type === "transfer") {
@@ -990,9 +1080,9 @@ function handleFormSubmit(e) {
   const amountVal = parseFloat(amountInput.value);
   const accountVal = accountSelect.value;
   const targetAccountVal = currentType === "transfer" ? targetAccountSelect.value : null;
-  const categoryVal = currentType === "transfer" ? "Transfer" : categorySelect.value;
+  let categoryVal = currentType === "transfer" ? "Transfer" : categorySelect.value;
   const dateVal = dateInput.value;
-  const tagsVal = tagsInput.value.split(",").map(t => t.trim().replace(/^#/, "")).filter(Boolean);
+  let tagsVal = tagsInput.value.split(",").map(t => t.trim().replace(/^#/, "")).filter(Boolean);
 
   if (!textVal || isNaN(amountVal) || amountVal <= 0 || !dateVal) {
     showToast("Please enter valid details", "warning");
@@ -1002,6 +1092,16 @@ function handleFormSubmit(e) {
   if (currentType === "transfer" && accountVal === targetAccountVal) {
     showToast("Source and destination accounts must be different", "warning");
     return;
+  }
+
+  // Automation rules check on new transactions
+  if (editingId === null && currentType !== "transfer") {
+    const candidate = { text: textVal, category: categoryVal, tags: [...tagsVal] };
+    const matchedRule = applyAutomationRules(candidate);
+    if (matchedRule) {
+      categoryVal = candidate.category;
+      tagsVal = candidate.tags;
+    }
   }
 
   let splitsData = null;
@@ -1024,6 +1124,9 @@ function handleFormSubmit(e) {
     }
   }
 
+  const isTaxDeductibleVal = taxDeductibleCheckbox ? taxDeductibleCheckbox.checked : false;
+  const taxCategoryVal = isTaxDeductibleVal && taxCategorySelect ? taxCategorySelect.value : "business";
+
   if (editingId !== null) {
     const old = transactions.find(t => t.id === editingId);
     if (old) revertAccountImpact(old);
@@ -1039,6 +1142,8 @@ function handleFormSubmit(e) {
       tags: tagsVal,
       splits: splitsData,
       receipt: currentReceiptBase64,
+      isTaxDeductible: isTaxDeductibleVal,
+      taxCategory: taxCategoryVal,
       date: dateVal
     } : t));
 
@@ -1056,6 +1161,8 @@ function handleFormSubmit(e) {
       tags: tagsVal,
       splits: splitsData,
       receipt: currentReceiptBase64,
+      isTaxDeductible: isTaxDeductibleVal,
+      taxCategory: taxCategoryVal,
       date: dateVal
     };
     transactions.unshift(newTx);
@@ -1401,6 +1508,7 @@ function getFilteredAndSortedTransactions() {
   const filterType = filterTypeSelect.value;
   const filterAcc = filterAccountSelect.value;
   const filterCat = filterCategorySelect.value;
+  const filterTax = filterTaxSelect ? filterTaxSelect.value : "all";
   const sortBy = sortBySelect.value;
 
   const now = new Date();
@@ -1414,6 +1522,7 @@ function getFilteredAndSortedTransactions() {
     const matchesType = filterType === "all" || t.type === filterType;
     const matchesAcc = filterAcc === "all" || t.account === filterAcc;
     const matchesCat = filterCat === "all" || t.category === filterCat;
+    const matchesTax = filterTax === "all" || (filterTax === "deductible" ? !!t.isTaxDeductible : !t.isTaxDeductible);
     const matchesTag = activeTagFilter === "all" || (t.tags || []).includes(activeTagFilter);
 
     let matchesPreset = true;
@@ -1421,7 +1530,7 @@ function getFilteredAndSortedTransactions() {
     else if (activeDatePreset === "last-month") matchesPreset = t.date && t.date.startsWith(lastYM);
     else if (activeDatePreset === "this-year") matchesPreset = t.date && t.date.startsWith(currentYear);
 
-    return matchesSearch && matchesType && matchesAcc && matchesCat && matchesTag && matchesPreset;
+    return matchesSearch && matchesType && matchesAcc && matchesCat && matchesTax && matchesTag && matchesPreset;
   });
 
   filtered.sort((a, b) => {
@@ -1476,6 +1585,7 @@ function renderLedger() {
 
     const tagsMarkup = (t.tags || []).map(tg => `<span class="tag-badge">#${tg}</span>`).join(" ");
     const receiptMarkup = t.receipt ? `<button class="receipt-btn-link" title="View attached receipt" onclick="openReceiptViewer('${t.receipt}')">📄</button>` : `<span style="color:var(--text-subtle);">—</span>`;
+    const taxBadge = t.isTaxDeductible ? `<span class="badge" title="Tax Deductible: ${t.taxCategory || 'Business'}" style="background:rgba(16,185,129,0.15);color:var(--income);font-size:0.68rem;padding:2px 5px;margin-left:4px;">🛡️ Tax</span>` : "";
 
     let categoryPill = `<span class="category-badge">${isTrans ? "🔄 Transfer" : `${meta.icon} ${meta.label}`}</span>`;
     if (Array.isArray(t.splits) && t.splits.length > 0) {
@@ -1487,7 +1597,7 @@ function renderLedger() {
       <td><input type="checkbox" class="ledger-row-checkbox" data-id="${t.id}" ${isChecked ? "checked" : ""}></td>
       <td>${formatDateDisplay(t.date)}</td>
       <td>
-        <strong>${t.text}</strong>
+        <strong>${t.text}</strong>${taxBadge}
         ${tagsMarkup ? `<div style="margin-top:2px;">${tagsMarkup}</div>` : ""}
       </td>
       <td><span class="account-badge">${acc.name}</span></td>
