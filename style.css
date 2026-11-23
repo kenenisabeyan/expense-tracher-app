@@ -24,6 +24,8 @@
   --expense: #ef4444;
   --expense-hover: #dc2626;
   --expense-light: #fef2f2;
+  --transfer: #8b5cf6;
+  --transfer-light: #f5f3ff;
   --warning: #f59e0b;
   --warning-light: #fffbeb;
   --runway: #06b6d4;
@@ -54,6 +56,7 @@
   --primary-light: rgba(79, 70, 229, 0.18);
   --income-light: rgba(16, 185, 129, 0.15);
   --expense-light: rgba(239, 68, 68, 0.15);
+  --transfer-light: rgba(139, 92, 246, 0.18);
   --warning-light: rgba(245, 158, 11, 0.15);
   --runway-light: rgba(6, 182, 212, 0.18);
   
@@ -101,6 +104,164 @@ body {
   font-weight: 500;
   color: var(--text-subtle);
   margin-left: 4px;
+}
+
+/* =========================================================
+   SECURITY PIN LOCK SCREEN OVERLAY
+   ========================================================= */
+.pin-lock-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-body);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999999;
+  padding: 20px;
+}
+
+.pin-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 36px 28px;
+  max-width: 380px;
+  width: 100%;
+  text-align: center;
+  box-shadow: var(--shadow-lg);
+}
+
+.pin-avatar {
+  font-size: 2.8rem;
+  margin-bottom: 12px;
+}
+
+.pin-card h2 {
+  font-size: 1.4rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.pin-card p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.pin-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--border-color);
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.pin-dot.filled {
+  background: var(--primary);
+  border-color: var(--primary);
+  transform: scale(1.15);
+}
+
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  max-width: 260px;
+  margin: 0 auto;
+}
+
+.pin-key {
+  height: 58px;
+  font-size: 1.4rem;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pin-key:hover {
+  background: var(--bg-hover);
+  border-color: var(--primary);
+}
+
+.pin-key:active {
+  transform: scale(0.95);
+}
+
+.pin-key.pin-clear,
+.pin-key.pin-delete {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.pin-error {
+  color: var(--expense);
+  font-size: 0.84rem;
+  font-weight: 700;
+  margin-top: 16px;
+  animation: shake 0.3s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  75% { transform: translateX(8px); }
+}
+
+/* =========================================================
+   NATURAL LANGUAGE SMART QUICK-ADD BAR
+   ========================================================= */
+.smart-input-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 12px 18px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-sm);
+  transition: var(--transition);
+}
+
+.smart-input-card:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.smart-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.smart-icon {
+  font-size: 1.4rem;
+}
+
+.smart-input-row input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 8px 4px;
+  font-size: 0.95rem;
+  color: var(--text-main);
+  outline: none;
 }
 
 /* =========================================================
@@ -166,7 +327,7 @@ body {
    APP CONTAINER LAYOUT & VIEWS
    ========================================================= */
 .app-layout {
-  max-width: 1240px;
+  max-width: 1260px;
   margin: 0 auto;
 }
 
@@ -407,7 +568,339 @@ body {
 
 .text-income { color: var(--income); }
 .text-expense { color: var(--expense); }
+.text-transfer { color: var(--transfer); }
 .text-runway { color: var(--runway); }
+
+/* =========================================================
+   ACCOUNTS & NET WORTH VIEW STYLES
+   ========================================================= */
+.accounts-header-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-input) 100%);
+}
+
+.net-worth-display span {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.net-worth-display h1 {
+  font-size: 2.4rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 4px 0 8px 0;
+}
+
+.net-worth-breakdown {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.accounts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 18px;
+}
+
+.account-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: var(--transition);
+}
+
+.account-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.account-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.account-name-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.account-icon-box {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+}
+
+.account-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.account-type-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  text-transform: capitalize;
+}
+
+.account-type-tag.asset { background: var(--income-light); color: var(--income); }
+.account-type-tag.liability { background: var(--expense-light); color: var(--expense); }
+
+.account-balance-display {
+  margin-bottom: 12px;
+}
+
+.account-balance-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.account-balance-val {
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+/* =========================================================
+   TAGS & FILTER CHIPS
+   ========================================================= */
+.tag-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.tag-filter-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.tag-chips-container {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tag-chip {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.tag-chip:hover {
+  background: var(--bg-hover);
+  color: var(--text-main);
+}
+
+.tag-chip.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.tag-badge {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+
+/* Receipt Preview & Thumbnail */
+.file-input-compact {
+  padding: 6px;
+  font-size: 0.8rem;
+}
+
+.receipt-preview-box {
+  position: relative;
+  display: inline-block;
+  margin-top: 6px;
+}
+
+.receipt-preview-box img {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+.btn-clear-receipt {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  background: var(--expense);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.receipt-btn-link {
+  background: transparent;
+  border: none;
+  font-size: 1.15rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.receipt-btn-link:hover {
+  transform: scale(1.2);
+}
+
+.receipt-modal-card {
+  max-width: 600px;
+}
+
+.receipt-full-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  max-height: 75vh;
+  overflow: auto;
+}
+
+.receipt-full-container img {
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+
+/* =========================================================
+   WEALTH FORECAST & SIMULATOR
+   ========================================================= */
+.forecast-card {
+  margin-bottom: 24px;
+}
+
+.forecast-controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.forecast-results-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 16px 20px;
+}
+
+.forecast-stat span {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.forecast-stat h3 {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--primary);
+  margin-top: 4px;
+}
+
+.forecast-stat h4 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin-top: 4px;
+}
+
+/* =========================================================
+   TOGGLE SWITCH (AUDIO & SETTINGS)
+   ========================================================= */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--border-color);
+  transition: 0.3s;
+  border-radius: var(--radius-full);
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.3s;
+  border-radius: var(--radius-full);
+}
+
+input:checked + .toggle-slider {
+  background-color: var(--primary);
+}
+
+input:checked + .toggle-slider:before {
+  transform: translateX(22px);
+}
 
 /* =========================================================
    MAIN GRID (DASHBOARD)
@@ -503,17 +996,9 @@ body {
   transition: var(--transition);
 }
 
-.type-btn.active[data-type="expense"] {
-  background: var(--expense);
-  color: #fff;
-  box-shadow: var(--shadow-sm);
-}
-
-.type-btn.active[data-type="income"] {
-  background: var(--income);
-  color: #fff;
-  box-shadow: var(--shadow-sm);
-}
+.type-btn.active[data-type="expense"] { background: var(--expense); color: #fff; box-shadow: var(--shadow-sm); }
+.type-btn.active[data-type="income"] { background: var(--income); color: #fff; box-shadow: var(--shadow-sm); }
+.type-btn.active[data-type="transfer"] { background: var(--transfer); color: #fff; box-shadow: var(--shadow-sm); }
 
 .form-group {
   margin-bottom: 14px;
@@ -1066,6 +1551,7 @@ select:focus {
 
 .transaction-item.income-item { border-left: 4px solid var(--income); }
 .transaction-item.expense-item { border-left: 4px solid var(--expense); }
+.transaction-item.transfer-item { border-left: 4px solid var(--transfer); }
 
 .item-left {
   display: flex;
@@ -1104,6 +1590,7 @@ select:focus {
   font-size: 0.75rem;
   color: var(--text-muted);
   margin-top: 2px;
+  flex-wrap: wrap;
 }
 
 .category-badge {
@@ -1111,6 +1598,15 @@ select:focus {
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   font-weight: 600;
+}
+
+.account-badge {
+  background: var(--bg-input);
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .item-right {
@@ -1128,6 +1624,7 @@ select:focus {
 
 .item-amount.income { color: var(--income); }
 .item-amount.expense { color: var(--expense); }
+.item-amount.transfer { color: var(--transfer); }
 
 .item-actions {
   display: flex;
@@ -1369,12 +1866,15 @@ select:focus {
 
   .app-header,
   .nav-tabs,
+  .smart-input-card,
   .filter-toolbar,
+  .tag-filter-bar,
   .date-preset-pills,
   .ledger-actions,
   .toast-container,
   .offline-banner,
   .modal-overlay,
+  .pin-lock-overlay,
   .btn,
   .item-actions {
     display: none !important;
@@ -1406,7 +1906,8 @@ select:focus {
   .item-title { max-width: 140px; }
   .card-header { flex-direction: column; align-items: flex-start; }
   .budget-inputs-container,
-  .insights-summary-grid { grid-template-columns: 1fr; }
+  .insights-summary-grid,
+  .accounts-header-banner { flex-direction: column; align-items: flex-start; }
   .header-actions { width: 100%; justify-content: space-between; }
   .btn-primary-header span { display: none; }
 }

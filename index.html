@@ -5,23 +5,53 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#4f46e5">
-  <meta name="description" content="All-in-one Smart Expense Tracker, Budget Manager, Subscription Tracker, and Financial Analytics Suite.">
+  <meta name="description" content="Ultimate Offline-First Personal Finance, Multi-Account, Budgeting, Investment Forecast & Cash-Flow Intelligence Platform.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
-  <title>Smart Expense Tracker & Financial Suite</title>
+  <title>Smart Expense Tracker & Financial Suite Ultimate</title>
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   
-  <!-- Chart.js for analytics -->
+  <!-- Chart.js for analytical & projection visualizers -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
 <body>
+  <!-- PIN Passcode Lock Screen Overlay (Protected State) -->
+  <div id="pinLockOverlay" class="pin-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Enter Security Passcode">
+    <div class="pin-card">
+      <div class="pin-avatar">🔒</div>
+      <h2>Security Passcode</h2>
+      <p>Enter your 4-digit PIN to access your financial records</p>
+      <div class="pin-dots">
+        <span class="pin-dot" id="dot1"></span>
+        <span class="pin-dot" id="dot2"></span>
+        <span class="pin-dot" id="dot3"></span>
+        <span class="pin-dot" id="dot4"></span>
+      </div>
+      <div class="pin-keypad">
+        <button type="button" class="pin-key" data-digit="1">1</button>
+        <button type="button" class="pin-key" data-digit="2">2</button>
+        <button type="button" class="pin-key" data-digit="3">3</button>
+        <button type="button" class="pin-key" data-digit="4">4</button>
+        <button type="button" class="pin-key" data-digit="5">5</button>
+        <button type="button" class="pin-key" data-digit="6">6</button>
+        <button type="button" class="pin-key" data-digit="7">7</button>
+        <button type="button" class="pin-key" data-digit="8">8</button>
+        <button type="button" class="pin-key" data-digit="9">9</button>
+        <button type="button" class="pin-key pin-clear" id="pinClearBtn">Clear</button>
+        <button type="button" class="pin-key" data-digit="0">0</button>
+        <button type="button" class="pin-key pin-delete" id="pinDeleteBtn">⌫</button>
+      </div>
+      <div id="pinErrorMsg" class="pin-error hidden">Incorrect Passcode. Try again.</div>
+    </div>
+  </div>
+
   <!-- Offline Network Banner -->
   <div id="offlineBanner" class="offline-banner hidden">
     <span>📡 Working in Offline Mode (Changes saved securely on this device)</span>
@@ -36,15 +66,20 @@
       <div class="brand">
         <div class="brand-icon">💰</div>
         <div>
-          <h1>Smart Expense Tracker Pro</h1>
-          <p class="subtitle">Complete Personal Finance, Budgeting & Analytics Platform</p>
+          <h1>Smart Expense Tracker Ultimate</h1>
+          <p class="subtitle">Multi-Account, Budgeting, Subscriptions & Wealth Forecasting</p>
         </div>
       </div>
 
       <div class="header-actions">
         <!-- Quick Add Transaction Button -->
         <button id="headerQuickAddBtn" class="btn-primary-header" title="Quick Add Transaction (Ctrl+N)">
-          ➕ <span>New Transaction</span>
+          ➕ <span>New Entry</span>
+        </button>
+
+        <!-- Lock Now Button (Visible when PIN active) -->
+        <button id="headerLockBtn" class="btn-icon hidden" title="Lock Application Now" aria-label="Lock App">
+          🔒
         </button>
 
         <!-- Currency Selector -->
@@ -69,25 +104,35 @@
       </div>
     </header>
 
-    <!-- Top View Navigation Bar (Pages / Sections) -->
+    <!-- Top View Navigation Bar (Tabs) -->
     <nav class="nav-tabs" aria-label="Main Navigation">
       <button class="nav-tab active" data-view="dashboard">📊 Dashboard</button>
+      <button class="nav-tab" data-view="accounts">💳 Accounts & Net Worth</button>
       <button class="nav-tab" data-view="transactions">📝 Transactions</button>
       <button class="nav-tab" data-view="budgets">🎯 Budgets & Goals</button>
       <button class="nav-tab" data-view="subscriptions">🔄 Subscriptions</button>
-      <button class="nav-tab" data-view="analytics">📈 Analytics</button>
+      <button class="nav-tab" data-view="analytics">📈 Analytics & Forecast</button>
       <button class="nav-tab" data-view="settings">⚙️ Settings</button>
     </nav>
 
     <!-- ========================================================
-         VIEW 1: DASHBOARD (MAIN OVERVIEW)
+         VIEW 1: DASHBOARD
          ======================================================== -->
     <main id="view-dashboard" class="view-container active">
-      <!-- Overview KPI Cards -->
+      <!-- Natural Language Quick-Add Bar -->
+      <div class="smart-input-card">
+        <div class="smart-input-row">
+          <span class="smart-icon">✨</span>
+          <input type="text" id="smartInput" placeholder='Smart Add: Type "Spent $45 on groceries" or "Salary $3000" and press Enter...'>
+          <button type="button" id="smartAddBtn" class="btn-sm btn-primary">Quick Parse</button>
+        </div>
+      </div>
+
+      <!-- KPI Overview Cards -->
       <section class="stats-grid">
         <div class="stat-card total-balance-card">
           <div class="stat-header">
-            <span class="stat-label">Net Balance</span>
+            <span class="stat-label">Net Worth / Balance</span>
             <span class="badge balance-badge" id="dashBalanceBadge">Positive</span>
           </div>
           <h2 class="stat-value" id="dashBalance">$0.00</h2>
@@ -99,7 +144,7 @@
 
         <div class="stat-card income-card">
           <div class="stat-header">
-            <span class="stat-label">Total Income</span>
+            <span class="stat-label">Total Inflows</span>
             <span class="stat-icon-pill income-pill">↗</span>
           </div>
           <h2 class="stat-value text-income" id="dashIncome">$0.00</h2>
@@ -108,7 +153,7 @@
 
         <div class="stat-card expense-card">
           <div class="stat-header">
-            <span class="stat-label">Total Expenses</span>
+            <span class="stat-label">Total Outflows</span>
             <span class="stat-icon-pill expense-pill">↘</span>
           </div>
           <h2 class="stat-value text-expense" id="dashExpense">$0.00</h2>
@@ -125,9 +170,9 @@
         </div>
       </section>
 
-      <!-- Dashboard Main Grid -->
+      <!-- Main Dashboard Grid -->
       <div class="main-grid">
-        <!-- Left Column: Add Form & Monthly Budgets -->
+        <!-- Left: Form & Accounts Snapshot -->
         <div class="column-left">
           <!-- Add / Edit Form Card -->
           <div class="card form-card">
@@ -137,16 +182,20 @@
             </div>
 
             <form id="transactionForm">
+              <!-- Type Switcher with Transfer Support -->
               <div class="type-toggle-group">
                 <button type="button" class="type-btn active" id="typeExpenseBtn" data-type="expense">Expense 📉</button>
                 <button type="button" class="type-btn" id="typeIncomeBtn" data-type="income">Income 📈</button>
+                <button type="button" class="type-btn" id="typeTransferBtn" data-type="transfer">Transfer 🔄</button>
               </div>
 
+              <!-- Title / Description -->
               <div class="form-group">
                 <label for="text">Description / Title <span class="shortcut-hint">(Ctrl+N)</span></label>
-                <input type="text" id="text" placeholder="e.g. Salary, Groceries, Electricity..." required maxlength="60">
+                <input type="text" id="text" placeholder="e.g. Salary, Groceries, Rent, Transfer to Savings..." required maxlength="60">
               </div>
 
+              <!-- Amount, Account & Category Row -->
               <div class="form-row">
                 <div class="form-group flex-1">
                   <label for="amount">Amount</label>
@@ -156,17 +205,50 @@
                   </div>
                 </div>
 
+                <!-- Source Account -->
                 <div class="form-group flex-1">
-                  <label for="category">Category</label>
-                  <select id="category" required></select>
+                  <label for="accountSelect" id="accountLabel">Account</label>
+                  <select id="accountSelect" required></select>
                 </div>
               </div>
 
-              <div class="form-group">
-                <label for="date">Date</label>
-                <input type="date" id="date" required>
+              <!-- Target Account (Only for Transfer Mode) -->
+              <div class="form-group hidden" id="targetAccountGroup">
+                <label for="targetAccountSelect">Transfer Destination Account</label>
+                <select id="targetAccountSelect"></select>
               </div>
 
+              <!-- Category & Date Row -->
+              <div class="form-row" id="categoryDateRow">
+                <div class="form-group flex-1" id="categoryGroup">
+                  <label for="category">Category</label>
+                  <select id="category" required></select>
+                </div>
+
+                <div class="form-group flex-1">
+                  <label for="date">Date</label>
+                  <input type="date" id="date" required>
+                </div>
+              </div>
+
+              <!-- Tags & Receipt Attachment Row -->
+              <div class="form-row">
+                <div class="form-group flex-1">
+                  <label for="tagsInput">Tags <span class="shortcut-hint">(comma separated)</span></label>
+                  <input type="text" id="tagsInput" placeholder="e.g. tax-deductible, business, trip">
+                </div>
+
+                <div class="form-group flex-1">
+                  <label for="receiptFileInput">Receipt Photo <span class="shortcut-hint">(optional)</span></label>
+                  <input type="file" id="receiptFileInput" accept="image/*" class="file-input-compact">
+                  <div id="receiptPreviewContainer" class="receipt-preview-box hidden">
+                    <img id="receiptPreviewImg" alt="Receipt preview">
+                    <button type="button" id="removeReceiptBtn" class="btn-clear-receipt">✕</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Actions -->
               <div class="form-actions">
                 <button type="submit" id="submitBtn" class="btn btn-primary">
                   <span id="submitBtnText">Add Transaction</span>
@@ -176,7 +258,7 @@
             </form>
           </div>
 
-          <!-- Monthly Budget Snapshot Card -->
+          <!-- Monthly Budget Snapshot -->
           <div class="card budget-card">
             <div class="card-header">
               <div>
@@ -189,12 +271,12 @@
           </div>
         </div>
 
-        <!-- Right Column: Visual Insights & Recent Transactions -->
+        <!-- Right: Charts & Recent Activity -->
         <div class="column-right">
           <!-- Visual Analytics Card -->
           <div class="card chart-card">
             <div class="card-header">
-              <h3>Cash Flow & Spending Breakdown</h3>
+              <h3>Cash Flow & Category Breakdown</h3>
               <div class="chart-tab-group">
                 <button type="button" id="chartTabCategory" class="chart-tab-btn active">🍩 Categories</button>
                 <button type="button" id="chartTabCashflow" class="chart-tab-btn">📊 6-Mo Cash Flow</button>
@@ -208,7 +290,7 @@
             </div>
           </div>
 
-          <!-- Recent Activity Card -->
+          <!-- Recent Transactions -->
           <div class="card recent-activity-card">
             <div class="card-header">
               <div>
@@ -224,14 +306,36 @@
     </main>
 
     <!-- ========================================================
-         VIEW 2: TRANSACTIONS LEDGER (FULL PAGE VIEW)
+         VIEW 2: ACCOUNTS & NET WORTH
+         ======================================================== -->
+    <main id="view-accounts" class="view-container">
+      <div class="accounts-header-banner card">
+        <div class="net-worth-display">
+          <span>Aggregated Net Worth</span>
+          <h1 id="netWorthDisplay">$0.00</h1>
+          <div class="net-worth-breakdown">
+            <span>Total Assets: <strong id="totalAssetsDisplay" class="text-income">$0.00</strong></span>
+            <span>•</span>
+            <span>Total Liabilities: <strong id="totalLiabilitiesDisplay" class="text-expense">$0.00</strong></span>
+          </div>
+        </div>
+        <button id="openNewAccountModalBtn" class="btn btn-primary" style="width: auto;">➕ Add New Account</button>
+      </div>
+
+      <div class="accounts-grid" id="accountsGrid">
+        <!-- Populated via script.js -->
+      </div>
+    </main>
+
+    <!-- ========================================================
+         VIEW 3: TRANSACTIONS LEDGER (FULL PAGE)
          ======================================================== -->
     <main id="view-transactions" class="view-container">
       <div class="card ledger-full-card">
         <div class="card-header ledger-header">
           <div>
             <h2>Transaction Ledger</h2>
-            <p class="history-count" id="ledgerCountLabel">Showing 0 transactions</p>
+            <p class="history-count" id="ledgerCountLabel">Showing 0 records</p>
           </div>
           <div class="ledger-actions">
             <button id="ledgerPrintBtn" class="btn-sm btn-outline" title="Print or save as PDF">🖨️ Print / PDF</button>
@@ -248,11 +352,19 @@
           <button type="button" class="preset-pill" data-range="this-year">This Year</button>
         </div>
 
-        <!-- Full Filter Toolbar -->
+        <!-- Tag Cloud Selector -->
+        <div id="tagFilterBar" class="tag-filter-bar">
+          <span class="tag-filter-label">Filter by Tag:</span>
+          <div id="tagChipsContainer" class="tag-chips-container">
+            <!-- Populated via script.js -->
+          </div>
+        </div>
+
+        <!-- Filter Toolbar -->
         <div class="filter-toolbar">
           <div class="search-box">
             <span class="search-icon">🔍</span>
-            <input type="text" id="searchInput" placeholder="Search by description or category...">
+            <input type="text" id="searchInput" placeholder="Search by description, tag, or category...">
           </div>
 
           <div class="filter-controls">
@@ -260,6 +372,11 @@
               <option value="all">All Types</option>
               <option value="income">Income Only</option>
               <option value="expense">Expense Only</option>
+              <option value="transfer">Transfers Only</option>
+            </select>
+
+            <select id="filterAccount" title="Filter by Account">
+              <option value="all">All Accounts</option>
             </select>
 
             <select id="filterCategory" title="Filter by Category">
@@ -275,18 +392,20 @@
           </div>
         </div>
 
-        <!-- Ledger Table / List -->
+        <!-- Ledger Table -->
         <div class="table-container">
           <table class="ledger-table" id="ledgerTable">
             <thead>
               <tr>
-                <th width="40"><input type="checkbox" id="selectAllCheckbox" title="Select All"></th>
+                <th width="36"><input type="checkbox" id="selectAllCheckbox" title="Select All"></th>
                 <th>Date</th>
-                <th>Description</th>
+                <th>Description & Tags</th>
+                <th>Account</th>
                 <th>Category</th>
                 <th>Type</th>
+                <th width="40" class="text-center">Receipt</th>
                 <th class="text-right">Amount</th>
-                <th width="100" class="text-center">Actions</th>
+                <th width="90" class="text-center">Actions</th>
               </tr>
             </thead>
             <tbody id="ledgerTableBody">
@@ -296,7 +415,7 @@
 
           <div id="ledgerEmptyState" class="empty-state hidden">
             <div class="empty-icon">📭</div>
-            <h4>No transactions match your search</h4>
+            <h4>No transactions match your query</h4>
             <p>Try clearing filters or add a new transaction.</p>
           </div>
         </div>
@@ -304,7 +423,7 @@
     </main>
 
     <!-- ========================================================
-         VIEW 3: BUDGETS & SAVINGS GOALS
+         VIEW 4: BUDGETS & SAVINGS GOALS
          ======================================================== -->
     <main id="view-budgets" class="view-container">
       <div class="two-column-layout">
@@ -335,14 +454,14 @@
     </main>
 
     <!-- ========================================================
-         VIEW 4: SUBSCRIPTIONS & RECURRING BILLS
+         VIEW 5: SUBSCRIPTIONS & RECURRING BILLS
          ======================================================== -->
     <main id="view-subscriptions" class="view-container">
       <div class="card">
         <div class="card-header">
           <div>
             <h2>Subscriptions & Recurring Bills</h2>
-            <p class="card-subtext">Keep track of software, utilities, rent, and monthly memberships</p>
+            <p class="card-subtext">Track memberships, software licenses, rent, and utility services</p>
           </div>
           <div class="quick-tools">
             <button class="btn-sm btn-outline" id="processDueSubsBtn">⚡ Process Due Bills</button>
@@ -372,9 +491,69 @@
     </main>
 
     <!-- ========================================================
-         VIEW 5: IN-DEPTH ANALYTICS & REPORTS
+         VIEW 6: IN-DEPTH ANALYTICS & WEALTH FORECAST
          ======================================================== -->
     <main id="view-analytics" class="view-container">
+      <!-- Wealth Projection & Compound Interest Simulator Card -->
+      <div class="card forecast-card">
+        <div class="card-header">
+          <div>
+            <h2>🔮 Wealth Compound Interest & Growth Simulator</h2>
+            <p class="card-subtext">Simulate portfolio expansion based on current monthly savings rate</p>
+          </div>
+        </div>
+
+        <div class="forecast-controls-grid">
+          <div class="form-group">
+            <label for="forecastInitial">Initial Principal</label>
+            <div class="input-with-symbol">
+              <span class="currency-symbol">$</span>
+              <input type="number" id="forecastInitial" value="5000" min="0" step="500">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="forecastMonthly">Monthly Contribution</label>
+            <div class="input-with-symbol">
+              <span class="currency-symbol">$</span>
+              <input type="number" id="forecastMonthly" value="500" min="0" step="50">
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="forecastRate">Annual Return Rate (%)</label>
+            <input type="number" id="forecastRate" value="8" min="1" max="25" step="0.5">
+          </div>
+          <div class="form-group">
+            <label for="forecastYears">Investment Horizon</label>
+            <select id="forecastYears">
+              <option value="5">5 Years</option>
+              <option value="10" selected>10 Years</option>
+              <option value="15">15 Years</option>
+              <option value="20">20 Years</option>
+              <option value="30">30 Years</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="forecast-results-bar">
+          <div class="forecast-stat">
+            <span>Future Estimated Value</span>
+            <h3 id="forecastTotalValue">$0.00</h3>
+          </div>
+          <div class="forecast-stat">
+            <span>Total Principal Invested</span>
+            <h4 id="forecastTotalPrincipal">$0.00</h4>
+          </div>
+          <div class="forecast-stat">
+            <span>Compound Interest Earned</span>
+            <h4 id="forecastTotalInterest" class="text-income">$0.00</h4>
+          </div>
+        </div>
+
+        <div class="chart-container" style="min-height: 280px; margin-top: 14px;">
+          <canvas id="forecastChart"></canvas>
+        </div>
+      </div>
+
       <div class="analytics-grid">
         <!-- Cash Flow Bar Card -->
         <div class="card">
@@ -428,7 +607,7 @@
     </main>
 
     <!-- ========================================================
-         VIEW 6: SETTINGS & DATA MANAGEMENT
+         VIEW 7: SETTINGS & PRIVACY
          ======================================================== -->
     <main id="view-settings" class="view-container">
       <div class="card settings-card">
@@ -436,6 +615,43 @@
           <h2>Application Settings & Data Sovereignty</h2>
         </div>
 
+        <!-- Security & PIN Lock Settings -->
+        <div class="settings-section">
+          <h3>🔒 Privacy & Passcode Lock</h3>
+          <div class="setting-row">
+            <div>
+              <strong>4-Digit Security PIN</strong>
+              <p class="setting-desc" id="pinSettingStatusText">Passcode lock is currently disabled.</p>
+            </div>
+            <div class="pin-actions">
+              <button id="setPinBtn" class="btn-sm btn-primary">Set Passcode</button>
+              <button id="removePinBtn" class="btn-sm btn-danger-outline hidden">Disable PIN</button>
+            </div>
+          </div>
+        </div>
+
+        <hr class="modal-divider">
+
+        <!-- Audio & Feedback Settings -->
+        <div class="settings-section">
+          <h3>🔊 Audio Feedback</h3>
+          <div class="setting-row">
+            <div>
+              <strong>Interface Chimes & Sounds</strong>
+              <p class="setting-desc">Pleasant synthesized audio cues for transactions, navigation, and alerts.</p>
+            </div>
+            <div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="audioToggle" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <hr class="modal-divider">
+
+        <!-- Preferences -->
         <div class="settings-section">
           <h3>Preferences</h3>
           <div class="setting-row">
@@ -470,8 +686,9 @@
 
         <hr class="modal-divider">
 
+        <!-- Backup & Portability -->
         <div class="settings-section">
-          <h3>Backup & Portability</h3>
+          <h3>Backup & Data Portability</h3>
           <p class="setting-desc">All your financial data is stored locally in your browser sandbox. Export snapshots regularly for safe keeping.</p>
           <div class="settings-actions-group">
             <button id="settingsExportJsonBtn" class="btn btn-primary">📤 Export Full JSON Backup</button>
@@ -481,6 +698,7 @@
 
         <hr class="modal-divider">
 
+        <!-- Restore from File -->
         <div class="settings-section">
           <h3>Restore from File</h3>
           <div class="file-upload-box">
@@ -501,9 +719,10 @@
 
         <hr class="modal-divider">
 
+        <!-- Danger Zone -->
         <div class="settings-section">
           <h3 style="color:var(--expense);">Danger Zone</h3>
-          <p class="setting-desc">Permanently wipe all transactions, budgets, subscriptions, and savings goals from this device.</p>
+          <p class="setting-desc">Permanently wipe all accounts, transactions, budgets, subscriptions, and savings goals from this device.</p>
           <button id="settingsWipeBtn" class="btn-sm btn-danger-outline">⚠️ Reset Entire Database</button>
         </div>
       </div>
@@ -511,7 +730,63 @@
   </div>
 
   <!-- ========================================================
-       MODAL 1: BUDGET CONFIGURATION
+       MODAL: RECEIPT LIGHTBOX VIEWER
+       ======================================================== -->
+  <div id="receiptModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Receipt Preview">
+    <div class="modal-card receipt-modal-card">
+      <div class="modal-header">
+        <h3 id="receiptModalTitle">📄 Receipt Attachment</h3>
+        <button class="modal-close-btn" id="closeReceiptModalBtn" aria-label="Close">&times;</button>
+      </div>
+      <div class="receipt-full-container">
+        <img id="receiptModalImg" src="" alt="Full Receipt">
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       MODAL: ADD / EDIT ACCOUNT
+       ======================================================== -->
+  <div id="accountModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="accountModalTitle">💳 Create Financial Account</h3>
+        <button class="modal-close-btn" id="closeAccountModalBtn" aria-label="Close Modal">&times;</button>
+      </div>
+      <form id="accountForm">
+        <div class="form-group">
+          <label for="accName">Account Name</label>
+          <input type="text" id="accName" placeholder="e.g. Chase Checking, Apple Card, Main Savings" required maxlength="40">
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="accType">Account Type</label>
+            <select id="accType">
+              <option value="checking">Checking (Asset)</option>
+              <option value="savings">Savings (Asset)</option>
+              <option value="credit">Credit Card (Liability)</option>
+              <option value="cash">Cash Wallet (Asset)</option>
+              <option value="investment">Investment / Brokerage (Asset)</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label for="accBalance">Initial Balance</label>
+            <div class="input-with-symbol">
+              <span class="currency-symbol">$</span>
+              <input type="number" id="accBalance" placeholder="0.00" step="0.01" required>
+            </div>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="cancelAccountBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================
+       MODAL: BUDGET CONFIGURATION
        ======================================================== -->
   <div id="budgetModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="budgetModalTitle">
     <div class="modal-card">
@@ -532,7 +807,7 @@
   </div>
 
   <!-- ========================================================
-       MODAL 2: ADD / EDIT SAVINGS GOAL
+       MODAL: SAVINGS GOAL
        ======================================================== -->
   <div id="goalModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="goalModalTitle">
     <div class="modal-card">
@@ -568,7 +843,7 @@
   </div>
 
   <!-- ========================================================
-       MODAL 3: ADD / EDIT SUBSCRIPTION
+       MODAL: SUBSCRIPTION
        ======================================================== -->
   <div id="subModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="subModalTitle">
     <div class="modal-card">
