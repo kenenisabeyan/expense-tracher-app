@@ -1751,52 +1751,36 @@ function handleBankCsvFile(e) {
       const lines = csvText.split(/\r\n|\n/).filter(line => line.trim());
       if (lines.length < 2) throw new Error("CSV has no data rows");
 
-      const header = lines[0].toLowerCase().split(",").map(h => h.trim().replace(/^["']|["']$/g, ""));
-      const dateIdx = header.findIndex(h => /date|posted|time/i.test(h));
-      const descIdx = header.findIndex(h => /desc|description|merchant|name|payee|memo/i.test(h));
-      const amountIdx = header.findIndex(h => /amount|total|debit|credit/i.test(h));
+      rawCsvRows = lines.map(l => l.split(",").map(p => p.trim().replace(/^["']|["']$/g, "")));
+      rawCsvHeaders = rawCsvRows[0];
 
-      if (dateIdx === -1 || amountIdx === -1) {
-        throw new Error("Could not automatically locate 'Date' and 'Amount' columns");
+      // Populate column selectors
+      [csvColDate, csvColDesc, csvColAmount].forEach(sel => { if (sel) sel.innerHTML = ""; });
+      rawCsvHeaders.forEach((h, idx) => {
+        if (csvColDate) csvColDate.appendChild(new Option(`${h} (Col ${idx+1})`, idx));
+        if (csvColDesc) csvColDesc.appendChild(new Option(`${h} (Col ${idx+1})`, idx));
+        if (csvColAmount) csvColAmount.appendChild(new Option(`${h} (Col ${idx+1})`, idx));
+      });
+
+      // Populate destination accounts
+      if (csvTargetAccount) {
+        csvTargetAccount.innerHTML = "";
+        accounts.forEach(a => {
+          csvTargetAccount.appendChild(new Option(`${a.icon} ${a.name}`, a.id));
+        });
       }
 
-      parsedCsvRecords = [];
-      const samples = [];
+      // Automatic column heuristic detection
+      const dGuess = rawCsvHeaders.findIndex(h => /date|posted|time/i.test(h));
+      const descGuess = rawCsvHeaders.findIndex(h => /desc|description|merchant|name|payee|memo/i.test(h));
+      const amtGuess = rawCsvHeaders.findIndex(h => /amount|total|debit|credit/i.test(h));
 
-      for (let i = 1; i < lines.length; i++) {
-        const parts = lines[i].split(",").map(p => p.trim().replace(/^["']|["']$/g, ""));
-        const rawDate = parts[dateIdx];
-        const rawDesc = descIdx !== -1 ? parts[descIdx] : "Bank Transaction";
-        const rawAmount = parseFloat(parts[amountIdx]?.replace(/[$\s]/g, ""));
+      if (csvColDate && dGuess !== -1) csvColDate.value = dGuess;
+      if (csvColDesc && descGuess !== -1) csvColDesc.value = descGuess;
+      if (csvColAmount && amtGuess !== -1) csvColAmount.value = amtGuess;
 
-        if (!rawDate || isNaN(rawAmount)) continue;
-
-        let parsedDate = new Date(rawDate);
-        let isoDate = !isNaN(parsedDate) ? parsedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
-
-        const isIncome = rawAmount > 0;
-        const absAmt = Math.abs(rawAmount);
-
-        const record = {
-          id: Date.now() + i + Math.random(),
-          text: rawDesc || "Bank Transaction",
-          amount: absAmt,
-          type: isIncome ? "income" : "expense",
-          category: isIncome ? "Salary" : "Food & Drinks",
-          account: accounts[0]?.id || "checking",
-          tags: ["bank-import"],
-          receipt: null,
-          date: isoDate
-        };
-
-        parsedCsvRecords.push(record);
-        if (samples.length < 4) samples.push(`${isoDate} | ${rawDesc} | ${formatCurrency(absAmt)}`);
-      }
-
-      csvParsedRowCount.textContent = parsedCsvRecords.length;
-      csvSampleRows.innerHTML = samples.join("<br>");
-      csvPreviewContainer.classList.remove("hidden");
-      executeCsvImportBtn.disabled = parsedCsvRecords.length === 0;
+      if (csvColumnMappingSection) csvColumnMappingSection.classList.remove("hidden");
+      reparseCsvWithMapping();
       sfx.play("click");
     } catch (err) {
       showToast("CSV Parse Error: " + err.message, "warning");
@@ -1804,6 +1788,54 @@ function handleBankCsvFile(e) {
     }
   };
   reader.readAsText(file);
+}
+
+function reparseCsvWithMapping() {
+  if (rawCsvRows.length < 2) return;
+  const dateIdx = csvColDate ? parseInt(csvColDate.value, 10) : 0;
+  const descIdx = csvColDesc ? parseInt(csvColDesc.value, 10) : 1;
+  const amountIdx = csvColAmount ? parseInt(csvColAmount.value, 10) : 2;
+  const targetAcc = csvTargetAccount ? (csvTargetAccount.value || accounts[0]?.id || "checking") : "checking";
+
+  parsedCsvRecords = [];
+  const samples = [];
+
+  for (let i = 1; i < rawCsvRows.length; i++) {
+    const parts = rawCsvRows[i];
+    const rawDate = parts[dateIdx];
+    const rawDesc = descIdx !== -1 && parts[descIdx] ? parts[descIdx] : "Bank Transaction";
+    const rawAmount = parseFloat(parts[amountIdx]?.replace(/[$€£,\s]/g, ""));
+
+    if (!rawDate || isNaN(rawAmount)) continue;
+
+    let parsedDate = new Date(rawDate);
+    let isoDate = !isNaN(parsedDate) ? parsedDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+
+    const isIncome = rawAmount > 0;
+    const absAmt = Math.abs(rawAmount);
+
+    const record = {
+      id: Date.now() + i + Math.random(),
+      text: rawDesc || "Bank Transaction",
+      amount: absAmt,
+      type: isIncome ? "income" : "expense",
+      category: isIncome ? "Salary" : "Food & Drinks",
+      account: targetAcc,
+      tags: ["bank-import"],
+      receipt: null,
+      isTaxDeductible: false,
+      taxCategory: "business",
+      date: isoDate
+    };
+
+    parsedCsvRecords.push(record);
+    if (samples.length < 5) samples.push(`${isoDate} | ${rawDesc} | ${formatCurrency(absAmt)}`);
+  }
+
+  csvParsedRowCount.textContent = parsedCsvRecords.length;
+  csvSampleRows.innerHTML = samples.join("<br>");
+  csvPreviewContainer.classList.remove("hidden");
+  executeCsvImportBtn.disabled = parsedCsvRecords.length === 0;
 }
 
 function executeBankCsvImport() {
@@ -2338,6 +2370,7 @@ function renderAnalyticsView() {
 
   renderTaxCenter();
   renderDebtPayoffPlanner();
+  renderRunwayProjection();
 }
 
 // --- CUSTOM CATEGORIES MANAGER (SETTINGS) ---
