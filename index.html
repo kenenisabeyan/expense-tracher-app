@@ -1182,6 +1182,58 @@
     </div>
   </div>
 
+  <!-- ========================================================
+         MODAL: GLOBAL COMMAND PALETTE (CTRL+K / ⌘K)
+         ======================================================== -->
+  <div id="cmdPaletteModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Command Palette">
+    <div class="cmd-palette-card">
+      <div class="cmd-palette-header">
+        <span class="cmd-palette-icon">⌘</span>
+        <input type="text" id="cmdPaletteInput" placeholder="Type a command, transaction, or jump to view..." autocomplete="off">
+        <kbd class="cmd-palette-esc" id="closeCmdPaletteBtn">ESC</kbd>
+      </div>
+      <div class="cmd-palette-results" id="cmdPaletteResults"></div>
+      <div class="cmd-palette-footer">
+        <span>Use <kbd>↑</kbd> <kbd>↓</kbd> to navigate</span>
+        <span><kbd>↵</kbd> to select</span>
+        <span><kbd>ESC</kbd> to dismiss</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+         MODAL: AUTOMATED CATEGORIZATION RULE
+         ======================================================== -->
+  <div id="ruleModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ruleModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="ruleModalTitle">⚡ New Automation Rule</h3>
+        <button class="modal-close-btn" id="closeRuleModalBtn" aria-label="Close">&times;</button>
+      </div>
+      <p class="modal-description">When a transaction description matches the keyword, auto-assign category and tag.</p>
+      <form id="ruleForm">
+        <div class="form-group">
+          <label for="ruleKeyword">Match Keyword / Vendor</label>
+          <input type="text" id="ruleKeyword" placeholder="e.g. Uber, Netflix, Starbucks, Whole Foods..." required maxlength="40">
+        </div>
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="ruleCategory">Target Category</label>
+            <select id="ruleCategory" required></select>
+          </div>
+          <div class="form-group flex-1">
+            <label for="ruleTag">Auto-Tag (Optional)</label>
+            <input type="text" id="ruleTag" placeholder="e.g. #commute, #dining">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="cancelRuleBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Automation Rule</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="script.js"></script>
 </body>
 
