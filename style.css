@@ -110,6 +110,41 @@
   --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.6);
 }
 
+/* WCAG AAA High-Contrast Accessibility Mode */
+[data-contrast="high"] {
+  --bg-body: #000000 !important;
+  --bg-card: #0a0a0a !important;
+  --bg-input: #000000 !important;
+  --bg-hover: #1f2937 !important;
+  --border-color: #ffffff !important;
+  --text-main: #ffffff !important;
+  --text-muted: #f1f5f9 !important;
+  --text-subtle: #e2e8f0 !important;
+  --primary: #38bdf8 !important;
+  --primary-hover: #0284c7 !important;
+  --income: #4ade80 !important;
+  --expense: #f87171 !important;
+}
+
+[data-contrast="high"] .card,
+[data-contrast="high"] .modal-card,
+[data-contrast="high"] .btn,
+[data-contrast="high"] input,
+[data-contrast="high"] select,
+[data-contrast="high"] textarea,
+[data-contrast="high"] .stat-card,
+[data-contrast="high"] .nav-tab,
+[data-contrast="high"] .tag-chip,
+[data-contrast="high"] .horizon-pill {
+  border: 2px solid #ffffff !important;
+}
+
+[data-contrast="high"] .btn-primary {
+  background: #ffffff !important;
+  color: #000000 !important;
+  font-weight: 800 !important;
+}
+
 /* Luxury Sapphire Terminal Theme */
 [data-theme="sapphire"] {
   --bg-body: #0a0f1d;
@@ -131,6 +166,41 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-md: 0 4px 10px rgba(0, 0, 0, 0.5);
   --shadow-lg: 0 10px 25px rgba(0, 0, 0, 0.6);
+}
+
+/* WCAG AAA High-Contrast Accessibility Mode */
+[data-contrast="high"] {
+  --bg-body: #000000 !important;
+  --bg-card: #0a0a0a !important;
+  --bg-input: #000000 !important;
+  --bg-hover: #1f2937 !important;
+  --border-color: #ffffff !important;
+  --text-main: #ffffff !important;
+  --text-muted: #f1f5f9 !important;
+  --text-subtle: #e2e8f0 !important;
+  --primary: #38bdf8 !important;
+  --primary-hover: #0284c7 !important;
+  --income: #4ade80 !important;
+  --expense: #f87171 !important;
+}
+
+[data-contrast="high"] .card,
+[data-contrast="high"] .modal-card,
+[data-contrast="high"] .btn,
+[data-contrast="high"] input,
+[data-contrast="high"] select,
+[data-contrast="high"] textarea,
+[data-contrast="high"] .stat-card,
+[data-contrast="high"] .nav-tab,
+[data-contrast="high"] .tag-chip,
+[data-contrast="high"] .horizon-pill {
+  border: 2px solid #ffffff !important;
+}
+
+[data-contrast="high"] .btn-primary {
+  background: #ffffff !important;
+  color: #000000 !important;
+  font-weight: 800 !important;
 }
 
 /* =========================================================
@@ -2990,7 +3060,97 @@ select:focus {
 }
 
 /* =========================================================
-   PRINT STYLES FOR CLEAN FINANCIAL STATEMENTS (CTRL+P)
+   LEDGER AUDIT & BALANCE RECONCILIATION
+   ========================================================= */
+.reconciliation-modal-card {
+  max-width: 740px;
+}
+
+.reconciliation-report-container {
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.audit-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.audit-metric-card {
+  background: var(--bg-page);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.audit-metric-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.audit-metric-val {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.audit-metric-val.healthy {
+  color: var(--income);
+}
+
+.audit-metric-val.drift {
+  color: var(--warning);
+}
+
+.reconcile-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.reconcile-table th,
+.reconcile-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-card);
+}
+
+.reconcile-table th {
+  background: var(--bg-page);
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.drift-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.drift-badge.balanced {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--income);
+}
+
+.drift-badge.unbalanced {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--expense);
+}
+
+/* =========================================================
+   PRINT STYLES FOR CLEAN FINANCIAL STATEMENTS & AUDIT REPORTS (CTRL+P)
    ========================================================= */
 @media print {
   body {
@@ -3014,6 +3174,61 @@ select:focus {
   .btn,
   .item-actions {
     display: none !important;
+  }
+
+  /* Specific override when printing financial statements */
+  body.printing-statement .view-container {
+    display: none !important;
+  }
+
+  body.printing-statement #statementsModal {
+    display: block !important;
+    position: static !important;
+    background: transparent !important;
+    padding: 0 !important;
+    z-index: auto !important;
+  }
+
+  body.printing-statement .statements-modal-card {
+    max-width: 100% !important;
+    width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+  }
+
+  body.printing-statement .modal-header,
+  body.printing-statement .statements-tabs-row,
+  body.printing-statement .modal-actions {
+    display: none !important;
+  }
+
+  body.printing-statement .statement-sheet {
+    border: 1px solid #111 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    page-break-inside: avoid;
+  }
+
+  body.printing-statement .statement-table th,
+  body.printing-statement .statement-table td {
+    color: #000000 !important;
+    border-bottom: 1px solid #ccc !important;
+  }
+
+  body.printing-statement .statement-section-hdr td {
+    background: #f0f0f0 !important;
+    color: #000000 !important;
+    font-weight: 800 !important;
+  }
+
+  body.printing-statement .statement-total-row td {
+    background: #f9f9f9 !important;
+    color: #000000 !important;
+    border-top: 2px solid #000 !important;
+    border-bottom: 2px solid #000 !important;
   }
 
   .view-container {

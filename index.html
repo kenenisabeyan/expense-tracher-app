@@ -22,6 +22,9 @@
 </head>
 
 <body>
+  <!-- Screen Reader Live Region for WCAG 2.1 AAA Accessibility Announcements -->
+  <div id="srAnnouncements" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+
   <!-- Cryptographic PIN Lock Screen Overlay -->
   <div id="pinLockOverlay" class="pin-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Enter Security Passcode">
     <div class="pin-card">
@@ -441,7 +444,7 @@
         <div class="filter-toolbar">
           <div class="search-box">
             <span class="search-icon">🔍</span>
-            <input type="text" id="searchInput" placeholder="Search by description, tag, or category...">
+            <input type="text" id="searchInput" placeholder="Search description, tag, or syntax (e.g. min:50 cat:dining type:expense)...">
           </div>
 
           <div class="filter-controls">
@@ -909,6 +912,37 @@
 
         <hr class="modal-divider">
 
+        <!-- Accessibility & Automation Preferences -->
+        <div class="settings-section">
+          <h3>♿ Accessibility & Smart Automation</h3>
+          <div class="setting-row">
+            <div>
+              <strong>High-Contrast Mode (WCAG AAA)</strong>
+              <p class="setting-desc">Enforces ultra-high luminance contrast (7:1+), solid white boundaries, and crisp readability for assistive devices.</p>
+            </div>
+            <div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="highContrastToggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+          <div class="setting-row" style="margin-top:14px;">
+            <div>
+              <strong>Auto-Post Due Bills on Startup</strong>
+              <p class="setting-desc">Automatically commits scheduled subscriptions and recurring bills to ledger accounts when their due date arrives.</p>
+            </div>
+            <div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="autoPostDueBillsToggle">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <hr class="modal-divider">
+
         <!-- Custom Categories Manager -->
         <div class="settings-section">
           <div class="card-header" style="padding:0; margin-bottom:10px;">
@@ -999,8 +1033,9 @@
               <span>Ledger: 0 items</span> • <span>Accounts: 0</span> • <span>Receipts: 0</span>
             </div>
           </div>
-          <div style="margin-top: 14px;">
+          <div style="margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap;">
             <button type="button" id="optimizeDatabaseBtn" class="btn-sm btn-outline">🧹 Run Storage Optimization & Clear Bloat</button>
+            <button type="button" id="verifyLedgerIntegrityBtn" class="btn-sm btn-secondary">🩺 Run Integrity Audit & Balance Reconciliation</button>
           </div>
         </div>
 
@@ -1413,6 +1448,30 @@
           <div class="shortcut-row"><span>Shortcut Reference</span><div><kbd>?</kbd></div></div>
           <div class="shortcut-row"><span>Close / Dismiss</span><div><kbd>ESC</kbd></div></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+         MODAL: LEDGER AUDIT & BALANCE RECONCILIATION
+         ======================================================== -->
+  <div id="reconciliationModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Ledger Audit & Balance Reconciliation">
+    <div class="modal-card reconciliation-modal-card">
+      <div class="modal-header">
+        <div>
+          <h3>🩺 Ledger Audit & Balance Reconciliation</h3>
+          <p class="modal-description">Examines account ledger entries, verifies mathematical integrity, and detects drift.</p>
+        </div>
+        <button class="modal-close-btn" id="closeReconciliationModalBtn" aria-label="Close">&times;</button>
+      </div>
+
+      <div id="reconciliationReportContainer" class="reconciliation-report-container">
+        <!-- Rendered dynamically -->
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="closeReconciliationActionBtn">Close</button>
+        <button type="button" class="btn btn-primary" id="reconcileBalancesBtn">⚖️ Reconcile Balances to Ledger</button>
       </div>
     </div>
   </div>

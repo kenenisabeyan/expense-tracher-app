@@ -503,12 +503,86 @@ const csvColDesc = document.getElementById("csvColDesc");
 const csvColAmount = document.getElementById("csvColAmount");
 const csvTargetAccount = document.getElementById("csvTargetAccount");
 
+// Accessibility & Smart Automation Elements
+const highContrastToggle = document.getElementById("highContrastToggle");
+const autoPostDueBillsToggle = document.getElementById("autoPostDueBillsToggle");
+const srAnnouncements = document.getElementById("srAnnouncements");
+
 let runwayProjectionChartInstance = null;
 let activeRunwayDays = 30;
 let activeStatementTab = "balance-sheet";
 let acknowledgedNotifications = new Set(JSON.parse(localStorage.getItem("expense_ack_notifications") || "[]"));
 let rawCsvRows = [];
 let rawCsvHeaders = [];
+
+// Screen Reader ARIA Live Region Announcement Dispatcher
+function announceToScreenReader(message) {
+  if (srAnnouncements) {
+    srAnnouncements.textContent = "";
+    setTimeout(() => {
+      srAnnouncements.textContent = message;
+    }, 50);
+  }
+}
+
+// --- INDEXEDDB DUAL-LAYER PERSISTENCE ENGINE ---
+const idbStorage = {
+  db: null,
+  async init() {
+    if (typeof window === "undefined" || !window.indexedDB) return null;
+    return new Promise((resolve) => {
+      try {
+        const req = window.indexedDB.open("ExpenseWorkstationDB", 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains("workstationStore")) {
+            db.createObjectStore("workstationStore");
+          }
+        };
+        req.onsuccess = (e) => {
+          this.db = e.target.result;
+          resolve(this.db);
+        };
+        req.onerror = () => resolve(null);
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  },
+  async set(key, val) {
+    if (!this.db) await this.init();
+    if (!this.db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db.transaction("workstationStore", "readwrite");
+        const store = tx.objectStore("workstationStore");
+        store.put(val, key);
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+      } catch (_) {
+        resolve(false);
+      }
+    });
+  },
+  async get(key) {
+    if (!this.db) await this.init();
+    if (!this.db) return null;
+    return new Promise((resolve) => {
+      try {
+        const tx = this.db.transaction("workstationStore", "readonly");
+        const store = tx.objectStore("workstationStore");
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  }
+};
+if (typeof window !== "undefined") {
+  idbStorage.init();
+}
 
 // --- HELPER UTILITIES ---
 function formatCurrency(amount) {
@@ -850,6 +924,7 @@ function deleteAccount(accId) {
 
 function saveAccounts() {
   localStorage.setItem("expense_accounts", JSON.stringify(accounts));
+  if (typeof idbStorage !== "undefined") idbStorage.set("expense_accounts", accounts);
 }
 
 // --- CATEGORIES & SPLIT TRANSACTIONS ENGINE ---
@@ -1560,8 +1635,55 @@ function renderTagChips() {
   });
 }
 
+function parseSearchQuery(rawQuery) {
+  const tokens = {
+    text: [],
+    type: null,
+    category: null,
+    account: null,
+    minAmount: null,
+    maxAmount: null,
+    tax: null,
+    tag: null
+  };
+
+  const parts = (rawQuery || "").split(/\s+/).filter(Boolean);
+  for (const part of parts) {
+    const colonIdx = part.indexOf(":");
+    if (colonIdx > 0) {
+      const key = part.slice(0, colonIdx).toLowerCase();
+      const val = part.slice(colonIdx + 1).toLowerCase();
+      if (key === "type" && ["expense", "income", "transfer"].includes(val)) {
+        tokens.type = val;
+      } else if (key === "cat" || key === "category") {
+        tokens.category = val;
+      } else if (key === "acc" || key === "account") {
+        tokens.account = val;
+      } else if (key === "min") {
+        const num = parseFloat(val);
+        if (!isNaN(num)) tokens.minAmount = num;
+      } else if (key === "max") {
+        const num = parseFloat(val);
+        if (!isNaN(num)) tokens.maxAmount = num;
+      } else if (key === "tax") {
+        tokens.tax = (val === "yes" || val === "true" || val === "deductible");
+      } else if (key === "tag") {
+        tokens.tag = val;
+      } else {
+        tokens.text.push(part.toLowerCase());
+      }
+    } else {
+      tokens.text.push(part.toLowerCase());
+    }
+  }
+  return tokens;
+}
+
 function getFilteredAndSortedTransactions() {
-  const query = searchInput.value.toLowerCase().trim();
+  const rawQuery = searchInput.value.trim();
+  const tokens = parseSearchQuery(rawQuery);
+  const plainText = tokens.text.join(" ");
+
   const filterType = filterTypeSelect.value;
   const filterAcc = filterAccountSelect.value;
   const filterCat = filterCategorySelect.value;
@@ -1575,7 +1697,25 @@ function getFilteredAndSortedTransactions() {
   const currentYear = `${now.getFullYear()}-`;
 
   let filtered = transactions.filter(t => {
-    const matchesSearch = !query || t.text.toLowerCase().includes(query) || t.category.toLowerCase().includes(query) || (t.tags || []).some(tg => tg.toLowerCase().includes(query));
+    const tDesc = (t.text || "").toLowerCase();
+    const tCat = (t.category || "").toLowerCase();
+    const tNotes = (t.notes || "").toLowerCase();
+    const tTags = (t.tags || []).map(tg => tg.toLowerCase());
+
+    const matchesSearch = !plainText || 
+      tDesc.includes(plainText) || 
+      tCat.includes(plainText) || 
+      tNotes.includes(plainText) || 
+      tTags.some(tg => tg.includes(plainText));
+
+    const matchesTokenType = !tokens.type || t.type === tokens.type;
+    const matchesTokenCat = !tokens.category || tCat.includes(tokens.category);
+    const matchesTokenAcc = !tokens.account || (t.account && t.account.toLowerCase().includes(tokens.account));
+    const matchesTokenMin = tokens.minAmount === null || t.amount >= tokens.minAmount;
+    const matchesTokenMax = tokens.maxAmount === null || t.amount <= tokens.maxAmount;
+    const matchesTokenTax = tokens.tax === null || (tokens.tax ? !!t.isTaxDeductible : !t.isTaxDeductible);
+    const matchesTokenTag = !tokens.tag || tTags.some(tg => tg.includes(tokens.tag));
+
     const matchesType = filterType === "all" || t.type === filterType;
     const matchesAcc = filterAcc === "all" || t.account === filterAcc;
     const matchesCat = filterCat === "all" || t.category === filterCat;
@@ -1587,7 +1727,9 @@ function getFilteredAndSortedTransactions() {
     else if (activeDatePreset === "last-month") matchesPreset = t.date && t.date.startsWith(lastYM);
     else if (activeDatePreset === "this-year") matchesPreset = t.date && t.date.startsWith(currentYear);
 
-    return matchesSearch && matchesType && matchesAcc && matchesCat && matchesTax && matchesTag && matchesPreset;
+    return matchesSearch && matchesTokenType && matchesTokenCat && matchesTokenAcc &&
+      matchesTokenMin && matchesTokenMax && matchesTokenTax && matchesTokenTag &&
+      matchesType && matchesAcc && matchesCat && matchesTax && matchesTag && matchesPreset;
   });
 
   filtered.sort((a, b) => {
@@ -2141,6 +2283,47 @@ function processDueSubscriptions() {
   showToast(`Processed ${due.length} recurring bills!`, "success");
 }
 
+function autoProcessDueSubscriptions() {
+  const isAutoPost = localStorage.getItem("expense_autopost_due") === "true";
+  if (!isAutoPost || !subscriptions || subscriptions.length === 0) return 0;
+
+  const today = new Date().toISOString().split("T")[0];
+  const due = subscriptions.filter(s => s.nextDate && s.nextDate <= today);
+  if (due.length === 0) return 0;
+
+  due.forEach(s => {
+    transactions.unshift({
+      id: Date.now() + Math.random(),
+      text: `${s.name} (Auto-Bill)`,
+      amount: Number(s.amount),
+      type: "expense",
+      category: s.category || "Subscriptions",
+      account: s.account || (accounts[0]?.name || "Default Checking"),
+      tags: ["subscription", "auto-bill"],
+      splits: null,
+      receipt: null,
+      date: s.nextDate
+    });
+
+    const acc = accounts.find(a => a.name === s.account || a.id === s.account) || accounts[0];
+    if (acc) acc.balance -= Number(s.amount);
+
+    const d = new Date(s.nextDate);
+    if (s.frequency === "yearly" || s.billingCycle === "yearly") d.setFullYear(d.getFullYear() + 1);
+    else if (s.frequency === "weekly" || s.billingCycle === "weekly") d.setDate(d.getDate() + 7);
+    else d.setMonth(d.getMonth() + 1);
+    s.nextDate = d.toISOString().split("T")[0];
+  });
+
+  saveAccounts();
+  saveTransactions();
+  localStorage.setItem("expense_subs", JSON.stringify(subscriptions));
+  renderNotifications();
+  showToast(`⚡ Auto-posted ${due.length} recurring subscription(s) due today`, "info");
+  announceToScreenReader(`Processed ${due.length} recurring subscriptions into ledger`);
+  return due.length;
+}
+
 // --- WEALTH FORECAST & COMPOUND INTEREST SIMULATOR ---
 function updateForecastSimulator() {
   if (typeof Chart === "undefined") return;
@@ -2584,6 +2767,7 @@ function handleCurrencyChange(val) {
 
 function saveTransactions() {
   localStorage.setItem("transactions", JSON.stringify(transactions));
+  if (typeof idbStorage !== "undefined") idbStorage.set("transactions", transactions);
 }
 
 // --- AUTOMATION RULES ENGINE ---
@@ -2870,6 +3054,384 @@ function simulateDebtPayoff(debts, extraMonthly, strategy) {
   }
 
   return { months, totalInterest };
+}
+
+// --- FORWARD CASH FLOW RUNWAY & SAFE DAILY SPEND ENGINE ---
+function renderRunwayProjection(days = activeRunwayDays) {
+  if (!runwayProjectionCanvas || typeof Chart === "undefined") return;
+
+  activeRunwayDays = days;
+  const liquidAssets = accounts
+    .filter(a => a.type === "checking" || a.type === "cash")
+    .reduce((s, a) => s + Math.max(0, a.balance), 0);
+
+  const now = new Date();
+  const past60Date = new Date();
+  past60Date.setDate(past60Date.getDate() - 60);
+  const past60Str = past60Date.toISOString().split("T")[0];
+
+  const recentExpenses = transactions.filter(t => t.type === "expense" && t.date >= past60Str);
+  const totalRecentExpense = recentExpenses.reduce((s, t) => s + t.amount, 0);
+  const avgDailyBurn = recentExpenses.length > 0 ? (totalRecentExpense / 60) : 40;
+
+  let committedBillsTotal = 0;
+  let scheduledCount = 0;
+  const horizonDate = new Date();
+  horizonDate.setDate(horizonDate.getDate() + days);
+  const horizonDateStr = horizonDate.toISOString().split("T")[0];
+
+  const labels = [];
+  const balancePoints = [];
+  let simulatedBalance = liquidAssets;
+
+  for (let i = 0; i <= days; i++) {
+    const curDate = new Date();
+    curDate.setDate(curDate.getDate() + i);
+    const dateStr = curDate.toISOString().split("T")[0];
+    const dayLabel = curDate.toLocaleDateString(undefined, { month: "numeric", day: "numeric" });
+    labels.push(dayLabel);
+
+    if (i > 0) {
+      simulatedBalance -= avgDailyBurn;
+
+      subscriptions.forEach(sub => {
+        if (!sub.nextDate) return;
+        const subDate = new Date(sub.nextDate);
+        if (subDate.getDate() === curDate.getDate() && dateStr <= horizonDateStr) {
+          simulatedBalance -= sub.amount;
+          committedBillsTotal += sub.amount;
+          scheduledCount++;
+        }
+      });
+    }
+
+    balancePoints.push(Math.round(simulatedBalance));
+  }
+
+  const finalBalance = balancePoints[balancePoints.length - 1];
+  const safeSpendDaily = Math.max(0, (finalBalance > 0 ? (finalBalance / days) : 0));
+
+  if (runwayDailyLimit) runwayDailyLimit.textContent = `${formatCurrency(safeSpendDaily)} / day`;
+  if (runwayHorizonBalance) {
+    runwayHorizonBalance.textContent = formatCurrency(finalBalance);
+    runwayHorizonBalance.className = finalBalance >= 0 ? "text-income" : "text-expense";
+  }
+  if (runwayHorizonDate) {
+    runwayHorizonDate.textContent = `Projected on ${horizonDate.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
+  }
+  if (runwayCommittedBills) runwayCommittedBills.textContent = formatCurrency(committedBillsTotal);
+  if (runwayBillsCount) runwayBillsCount.textContent = `${scheduledCount} scheduled recurring bills`;
+
+  if (runwayProjectionChartInstance) runwayProjectionChartInstance.destroy();
+
+  runwayProjectionChartInstance = new Chart(runwayProjectionCanvas.getContext("2d"), {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Projected Cash Trajectory",
+        data: balancePoints,
+        borderColor: finalBalance >= 0 ? "#10b981" : "#ef4444",
+        backgroundColor: finalBalance >= 0 ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)",
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` Projected Balance: ${formatCurrency(c.raw)}` } }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxTicksLimit: 10, color: "#94a3b8" } },
+        y: { grid: { color: "#27354f" }, ticks: { color: "#94a3b8", callback: v => `${currentCurrency}${v}` } }
+      }
+    }
+  });
+}
+
+// --- FINANCIAL HEALTH ALERTS & NOTIFICATIONS CENTER ---
+function computeNotifications() {
+  const notifs = [];
+  const now = new Date();
+  const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  // 1. Budget Alerts
+  const monthlyExpenses = {};
+  transactions.filter(t => t.type === "expense" && t.date && t.date.startsWith(currentYM)).forEach(t => {
+    if (Array.isArray(t.splits) && t.splits.length > 0) {
+      t.splits.forEach(s => monthlyExpenses[s.category] = (monthlyExpenses[s.category] || 0) + s.amount);
+    } else {
+      monthlyExpenses[t.category] = (monthlyExpenses[t.category] || 0) + t.amount;
+    }
+  });
+
+  Object.entries(budgets).forEach(([cat, cap]) => {
+    if (cap <= 0) return;
+    const spent = monthlyExpenses[cat] || 0;
+    const pct = (spent / cap) * 100;
+    if (pct > 100) {
+      notifs.push({
+        id: `budget_over_${cat}`,
+        type: "danger",
+        icon: "🚨",
+        title: `Budget Exceeded: ${cat}`,
+        desc: `You have spent ${formatCurrency(spent)} of your ${formatCurrency(cap)} limit (${pct.toFixed(0)}%).`
+      });
+    } else if (pct >= 80) {
+      notifs.push({
+        id: `budget_warn_${cat}`,
+        type: "warning",
+        icon: "⚠️",
+        title: `Budget Alert: ${cat}`,
+        desc: `You are at ${pct.toFixed(0)}% of your monthly limit (${formatCurrency(spent)} / ${formatCurrency(cap)}).`
+      });
+    }
+  });
+
+  // 2. Subscriptions due soon
+  subscriptions.forEach(sub => {
+    if (!sub.nextDate) return;
+    const due = new Date(sub.nextDate);
+    const diffDays = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
+    if (diffDays <= 3 && diffDays >= 0) {
+      notifs.push({
+        id: `sub_due_${sub.id}_${sub.nextDate}`,
+        type: "info",
+        icon: "🔄",
+        title: `Upcoming Due Bill: ${sub.name}`,
+        desc: `${formatCurrency(sub.amount)} scheduled on ${sub.nextDate} (${diffDays === 0 ? "Today" : `in ${diffDays} day(s)`}).`
+      });
+    }
+  });
+
+  // 3. Savings Goal Milestones
+  savingsGoals.forEach(g => {
+    const pct = (g.saved / g.target) * 100;
+    if (pct >= 100) {
+      notifs.push({
+        id: `goal_completed_${g.id}`,
+        type: "success",
+        icon: "🏆",
+        title: `Goal Funded: ${g.name}`,
+        desc: `Target of ${formatCurrency(g.target)} is fully funded! Current balance: ${formatCurrency(g.saved)}.`
+      });
+    } else if (pct >= 50) {
+      notifs.push({
+        id: `goal_halfway_${g.id}`,
+        type: "info",
+        icon: "🎯",
+        title: `Goal Milestone: ${g.name}`,
+        desc: `You have reached ${pct.toFixed(0)}% (${formatCurrency(g.saved)} of ${formatCurrency(g.target)}).`
+      });
+    }
+  });
+
+  // 4. Cold Storage Vault Reminder
+  if (transactions.length >= 25 && !localStorage.getItem("expense_last_backup")) {
+    notifs.push({
+      id: "backup_recommendation",
+      type: "info",
+      icon: "🔐",
+      title: "Cold-Storage Vault Snapshot Recommended",
+      desc: "Over 25 ledger entries recorded. Export an AES-256-GCM encrypted backup in Settings."
+    });
+  }
+
+  return notifs;
+}
+
+function renderNotifications() {
+  const notifs = computeNotifications();
+  const unreadCount = notifs.filter(n => !acknowledgedNotifications.has(n.id)).length;
+
+  if (notificationBadge) {
+    notificationBadge.textContent = unreadCount;
+    notificationBadge.classList.toggle("hidden", unreadCount === 0);
+  }
+
+  if (unreadNotificationsPill) {
+    unreadNotificationsPill.textContent = `${unreadCount} New / ${notifs.length} Total`;
+  }
+
+  if (notificationListContainer) {
+    if (notifs.length === 0) {
+      notificationListContainer.innerHTML = `<div style="padding:24px; text-align:center; color:var(--text-muted); font-size:0.88rem;">🎉 All systems optimal! No active budget alerts or overdue bills.</div>`;
+    } else {
+      notificationListContainer.innerHTML = notifs.map(n => `
+        <div class="notification-item ${n.type}">
+          <div class="notification-icon-box">${n.icon}</div>
+          <div class="notification-body">
+            <div class="notification-title">${n.title}</div>
+            <div class="notification-desc">${n.desc}</div>
+          </div>
+        </div>
+      `).join("");
+    }
+  }
+}
+
+function openNotificationCenter() {
+  renderNotifications();
+  if (notificationModal) notificationModal.classList.remove("hidden");
+  const notifs = computeNotifications();
+  notifs.forEach(n => acknowledgedNotifications.add(n.id));
+  localStorage.setItem("expense_ack_notifications", JSON.stringify([...acknowledgedNotifications]));
+  if (notificationBadge) notificationBadge.classList.add("hidden");
+}
+
+function clearNotifications() {
+  const notifs = computeNotifications();
+  notifs.forEach(n => acknowledgedNotifications.add(n.id));
+  localStorage.setItem("expense_ack_notifications", JSON.stringify([...acknowledgedNotifications]));
+  renderNotifications();
+  showToast("Notifications cleared", "info");
+}
+
+// --- GAAP FINANCIAL STATEMENTS ENGINE (BALANCE SHEET & P&L) ---
+function openFinancialStatements() {
+  if (statementsModal) {
+    statementsModal.classList.remove("hidden");
+    renderActiveStatement();
+  }
+}
+
+function renderActiveStatement() {
+  if (!statementContentContainer) return;
+  if (activeStatementTab === "balance-sheet") {
+    renderBalanceSheet();
+  } else {
+    renderProfitLossStatement();
+  }
+}
+
+function renderBalanceSheet() {
+  const currentAssets = accounts.filter(a => a.type === "checking" || a.type === "cash");
+  const nonCurrentAssets = accounts.filter(a => a.type === "savings" || a.type === "investment");
+  const liabilities = accounts.filter(a => a.type === "credit" || a.balance < 0);
+
+  const curAssetTotal = currentAssets.reduce((s, a) => s + Math.max(0, a.balance), 0);
+  const nonCurAssetTotal = nonCurrentAssets.reduce((s, a) => s + Math.max(0, a.balance), 0);
+  const totalAssets = curAssetTotal + nonCurAssetTotal;
+
+  const totalLiabilities = liabilities.reduce((s, a) => s + Math.abs(a.balance), 0);
+  const totalEquity = totalAssets - totalLiabilities;
+
+  statementContentContainer.innerHTML = `
+    <div class="statement-header-box" style="margin-bottom:14px; text-align:center;">
+      <h2 style="font-size:1.15rem; font-weight:700;">Statement of Financial Position (Balance Sheet)</h2>
+      <p style="font-size:0.8rem; color:var(--text-muted);">As of ${new Date().toLocaleDateString(undefined, { dateStyle: "long" })} • Denominated in ${currentCurrency}</p>
+    </div>
+
+    <table class="statement-table">
+      <thead>
+        <tr class="statement-section-hdr"><th colspan="2">ASSETS</th></tr>
+      </thead>
+      <tbody>
+        <tr class="statement-subhdr"><td colspan="2"><strong>Current Assets (Liquid Reserves)</strong></td></tr>
+        ${currentAssets.map(a => `<tr><td style="padding-left:24px;">${a.icon} ${a.name}</td><td class="text-right">${formatCurrency(Math.max(0, a.balance))}</td></tr>`).join("")}
+        <tr class="statement-total-row"><td>Total Current Assets</td><td class="text-right">${formatCurrency(curAssetTotal)}</td></tr>
+        
+        <tr class="statement-subhdr"><td colspan="2"><strong>Non-Current Assets (Long-Term & Investments)</strong></td></tr>
+        ${nonCurrentAssets.map(a => `<tr><td style="padding-left:24px;">${a.icon} ${a.name}</td><td class="text-right">${formatCurrency(Math.max(0, a.balance))}</td></tr>`).join("")}
+        <tr class="statement-total-row"><td>Total Non-Current Assets</td><td class="text-right">${formatCurrency(nonCurAssetTotal)}</td></tr>
+
+        <tr style="background:rgba(16,185,129,0.1); font-weight:700; font-size:1rem;">
+          <td>TOTAL ASSETS</td>
+          <td class="text-right text-income">${formatCurrency(totalAssets)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <table class="statement-table" style="margin-top:16px;">
+      <thead>
+        <tr class="statement-section-hdr"><th colspan="2">LIABILITIES & OWNER'S EQUITY</th></tr>
+      </thead>
+      <tbody>
+        <tr class="statement-subhdr"><td colspan="2"><strong>Current Liabilities (Debt Obligations)</strong></td></tr>
+        ${liabilities.map(a => `<tr><td style="padding-left:24px;">${a.icon} ${a.name}</td><td class="text-right">${formatCurrency(Math.abs(a.balance))}</td></tr>`).join("")}
+        <tr class="statement-total-row"><td>Total Liabilities</td><td class="text-right text-expense">${formatCurrency(totalLiabilities)}</td></tr>
+
+        <tr class="statement-subhdr"><td colspan="2"><strong>Owner's Equity (Net Worth)</strong></td></tr>
+        <tr><td style="padding-left:24px;">Retained Financial Capital</td><td class="text-right">${formatCurrency(totalEquity)}</td></tr>
+        <tr class="statement-total-row"><td>Total Owner's Equity</td><td class="text-right">${formatCurrency(totalEquity)}</td></tr>
+
+        <tr style="background:rgba(99,102,241,0.1); font-weight:700; font-size:1rem;">
+          <td>TOTAL LIABILITIES & EQUITY</td>
+          <td class="text-right">${formatCurrency(totalLiabilities + totalEquity)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+function renderProfitLossStatement() {
+  const currentYear = new Date().getFullYear().toString();
+  const yearTxs = transactions.filter(t => t.date && t.date.startsWith(currentYear));
+
+  const incomeTxs = yearTxs.filter(t => t.type === "income");
+  const expenseTxs = yearTxs.filter(t => t.type === "expense");
+
+  const totalRevenue = incomeTxs.reduce((s, t) => s + t.amount, 0);
+  const totalExpense = expenseTxs.reduce((s, t) => s + t.amount, 0);
+  const netOperatingProfit = totalRevenue - totalExpense;
+  const operatingMargin = totalRevenue > 0 ? ((netOperatingProfit / totalRevenue) * 100).toFixed(1) : 0;
+
+  const revenueByCat = {};
+  incomeTxs.forEach(t => revenueByCat[t.category] = (revenueByCat[t.category] || 0) + t.amount);
+
+  const expenseByCat = {};
+  expenseTxs.forEach(t => {
+    if (Array.isArray(t.splits) && t.splits.length > 0) {
+      t.splits.forEach(s => expenseByCat[s.category] = (expenseByCat[s.category] || 0) + s.amount);
+    } else {
+      expenseByCat[t.category] = (expenseByCat[t.category] || 0) + t.amount;
+    }
+  });
+
+  statementContentContainer.innerHTML = `
+    <div class="statement-header-box" style="margin-bottom:14px; text-align:center;">
+      <h2 style="font-size:1.15rem; font-weight:700;">Statement of Profit & Loss (Income Statement)</h2>
+      <p style="font-size:0.8rem; color:var(--text-muted);">Year-to-Date ${currentYear} • Operating Margin: <strong>${operatingMargin}%</strong></p>
+    </div>
+
+    <table class="statement-table">
+      <thead>
+        <tr class="statement-section-hdr"><th colspan="2">OPERATING REVENUE & INFLOWS</th></tr>
+      </thead>
+      <tbody>
+        ${Object.entries(revenueByCat).map(([cat, amt]) => `<tr><td style="padding-left:24px;">${cat}</td><td class="text-right">${formatCurrency(amt)}</td></tr>`).join("")}
+        <tr class="statement-total-row"><td>Gross Inflows</td><td class="text-right text-income">${formatCurrency(totalRevenue)}</td></tr>
+      </tbody>
+    </table>
+
+    <table class="statement-table" style="margin-top:16px;">
+      <thead>
+        <tr class="statement-section-hdr"><th colspan="2">OPERATING EXPENDITURES</th></tr>
+      </thead>
+      <tbody>
+        ${Object.entries(expenseByCat).map(([cat, amt]) => `<tr><td style="padding-left:24px;">${cat}</td><td class="text-right">${formatCurrency(amt)}</td></tr>`).join("")}
+        <tr class="statement-total-row"><td>Total Operating Expenditures</td><td class="text-right text-expense">${formatCurrency(totalExpense)}</td></tr>
+        
+        <tr style="background:${netOperatingProfit >= 0 ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)"}; font-weight:700; font-size:1rem;">
+          <td>NET OPERATING PROFIT / SURPLUS</td>
+          <td class="text-right ${netOperatingProfit >= 0 ? "text-income" : "text-expense"}">${netOperatingProfit >= 0 ? "+" : ""}${formatCurrency(netOperatingProfit)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+}
+
+// --- SHORTCUTS REFERENCE CHEATSHEET ---
+function openShortcutsModal() {
+  if (shortcutsModal) shortcutsModal.classList.remove("hidden");
+}
+
+function closeShortcutsModal() {
+  if (shortcutsModal) shortcutsModal.classList.add("hidden");
 }
 
 // --- LIVE & OFFLINE CURRENCY SYNC ENGINE ---
@@ -3185,6 +3747,177 @@ function optimizeDatabase() {
   sfx.play("success");
 }
 
+// --- LEDGER INTEGRITY AUDIT & BALANCE RECONCILIATION ENGINE ---
+const verifyLedgerIntegrityBtn = document.getElementById("verifyLedgerIntegrityBtn");
+const reconciliationModal = document.getElementById("reconciliationModal");
+const reconciliationReportContainer = document.getElementById("reconciliationReportContainer");
+const closeReconciliationModalBtn = document.getElementById("closeReconciliationModalBtn");
+const closeReconciliationActionBtn = document.getElementById("closeReconciliationActionBtn");
+const reconcileBalancesBtn = document.getElementById("reconcileBalancesBtn");
+
+let lastAuditResults = null;
+
+function performLedgerAudit() {
+  const accountNames = new Set(accounts.map(a => a.name));
+  const accountIds = new Set(accounts.map(a => a.id));
+
+  // 1. Duplicate ID Check
+  const idCounts = {};
+  let duplicateCount = 0;
+  transactions.forEach(t => {
+    idCounts[t.id] = (idCounts[t.id] || 0) + 1;
+    if (idCounts[t.id] === 2) duplicateCount++;
+  });
+
+  // 2. Orphan Account Check
+  const orphanTxs = transactions.filter(t => {
+    return t.account && !accountNames.has(t.account) && !accountIds.has(t.account);
+  });
+
+  // 3. Balance Reconciliation (Calculated Inflows - Outflows vs Stored Balance)
+  const reconciliation = accounts.map(acc => {
+    let ledgerInflows = 0;
+    let ledgerOutflows = 0;
+
+    transactions.forEach(t => {
+      const isAccountMatch = t.account === acc.name || t.account === acc.id;
+      if (isAccountMatch) {
+        if (t.type === "income") {
+          ledgerInflows += Number(t.amount || 0);
+        } else if (t.type === "expense") {
+          ledgerOutflows += Number(t.amount || 0);
+        } else if (t.type === "transfer") {
+          ledgerOutflows += Number(t.amount || 0);
+        }
+      }
+      if (t.type === "transfer" && (t.targetAccount === acc.name || t.targetAccount === acc.id)) {
+        ledgerInflows += Number(t.amount || 0);
+      }
+    });
+
+    const genesisBalance = Number(acc.initialBalance || 0);
+    const calculatedBalance = genesisBalance + ledgerInflows - ledgerOutflows;
+    const currentBalance = Number(acc.balance || 0);
+    const drift = currentBalance - calculatedBalance;
+
+    return {
+      id: acc.id,
+      name: acc.name,
+      type: acc.type,
+      genesisBalance,
+      inflows: ledgerInflows,
+      outflows: ledgerOutflows,
+      calculatedBalance,
+      currentBalance,
+      drift,
+      isBalanced: Math.abs(drift) < 0.01
+    };
+  });
+
+  const totalDrift = reconciliation.reduce((sum, r) => sum + Math.abs(r.drift), 0);
+  const allBalanced = reconciliation.every(r => r.isBalanced) && orphanTxs.length === 0 && duplicateCount === 0;
+
+  lastAuditResults = {
+    totalTransactions: transactions.length,
+    duplicateCount,
+    orphanCount: orphanTxs.length,
+    reconciliation,
+    totalDrift,
+    allBalanced
+  };
+
+  return lastAuditResults;
+}
+
+function openReconciliationModal() {
+  const audit = performLedgerAudit();
+  if (!reconciliationReportContainer) return;
+
+  const totalDriftFormatted = formatCurrency(audit.totalDrift);
+
+  reconciliationReportContainer.innerHTML = `
+    <div class="audit-metrics-grid">
+      <div class="audit-metric-card">
+        <span class="audit-metric-label">Audited Records</span>
+        <span class="audit-metric-val">${audit.totalTransactions} txs</span>
+      </div>
+      <div class="audit-metric-card">
+        <span class="audit-metric-label">Integrity Status</span>
+        <span class="audit-metric-val ${audit.allBalanced ? "healthy" : "drift"}">
+          ${audit.allBalanced ? "✅ 100% Balanced" : "⚠️ Drift Detected"}
+        </span>
+      </div>
+      <div class="audit-metric-card">
+        <span class="audit-metric-label">Orphan Transactions</span>
+        <span class="audit-metric-val ${audit.orphanCount === 0 ? "healthy" : "drift"}">
+          ${audit.orphanCount}
+        </span>
+      </div>
+      <div class="audit-metric-card">
+        <span class="audit-metric-label">Net Balance Drift</span>
+        <span class="audit-metric-val ${audit.totalDrift < 0.01 ? "healthy" : "drift"}">
+          ${totalDriftFormatted}
+        </span>
+      </div>
+    </div>
+
+    <div style="margin-top: 10px;">
+      <h4 style="font-size:0.9rem; margin-bottom:8px; color:var(--text-primary);">Account Ledger Verification</h4>
+      <table class="reconcile-table">
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Genesis</th>
+            <th>Inflows (+)</th>
+            <th>Outflows (-)</th>
+            <th>Ledger Sum</th>
+            <th>Current Bal</th>
+            <th>Variance</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${audit.reconciliation.map(r => `
+            <tr>
+              <td><strong>${r.name}</strong></td>
+              <td>${formatCurrency(r.genesisBalance)}</td>
+              <td style="color:var(--income);">+${formatCurrency(r.inflows)}</td>
+              <td style="color:var(--expense);">${formatCurrency(r.outflows)}</td>
+              <td><strong>${formatCurrency(r.calculatedBalance)}</strong></td>
+              <td>${formatCurrency(r.currentBalance)}</td>
+              <td>
+                <span class="drift-badge ${r.isBalanced ? "balanced" : "unbalanced"}">
+                  ${r.isBalanced ? "Match" : (r.drift > 0 ? "+" : "") + formatCurrency(r.drift)}
+                </span>
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  if (reconciliationModal) reconciliationModal.classList.remove("hidden");
+  announceToScreenReader("Ledger audit complete. " + (audit.allBalanced ? "All accounts perfectly reconciled." : "Discrepancy detected across accounts."));
+}
+
+function reconcileBalancesToLedger() {
+  if (!lastAuditResults) return;
+  lastAuditResults.reconciliation.forEach(r => {
+    const acc = accounts.find(a => a.id === r.id);
+    if (acc) {
+      acc.balance = r.calculatedBalance;
+    }
+  });
+
+  saveAccounts();
+  renderAccountsView();
+  renderApp();
+  openReconciliationModal();
+  sfx.play("success");
+  showToast("⚖️ All account balances reconciled to exact ledger reality!", "success");
+  announceToScreenReader("Account balances reconciled successfully");
+}
+
 // --- COMMAND PALETTE (CTRL+K / ⌘K) ---
 const COMMANDS = [
   { id: "dash", label: "Jump to Dashboard", category: "Navigation", icon: "📊", shortcut: "G D", action: () => switchView("dashboard") },
@@ -3269,6 +4002,7 @@ function executeSelectedCommand() {
 
 // --- GLOBAL RENDER ---
 function renderApp() {
+  renderNotifications();
   if (activeView === "dashboard") renderDashboard();
   else if (activeView === "accounts") renderAccountsView();
   else if (activeView === "transactions") renderLedger();
@@ -3307,9 +4041,17 @@ function setupShortcuts() {
       e.preventDefault();
       openBudgetConfigModal();
     }
+    if (e.key === "?" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
+      e.preventDefault();
+      openShortcutsModal();
+    }
     if (e.key === "Escape") {
       closeCommandPalette();
       if (ruleModal) ruleModal.classList.add("hidden");
+      if (notificationModal) notificationModal.classList.add("hidden");
+      if (statementsModal) statementsModal.classList.add("hidden");
+      if (shortcutsModal) closeShortcutsModal();
+      if (reconciliationModal) reconciliationModal.classList.add("hidden");
       closeBudgetConfigModal();
       goalModal.classList.add("hidden");
       subModal.classList.add("hidden");
@@ -3556,6 +4298,94 @@ function init() {
   // Receipt Modal
   closeReceiptModalBtn.addEventListener("click", () => receiptModal.classList.add("hidden"));
 
+  // Notification Center Controls
+  if (headerNotificationBtn) headerNotificationBtn.addEventListener("click", openNotificationCenter);
+  if (closeNotificationModalBtn) closeNotificationModalBtn.addEventListener("click", () => notificationModal.classList.add("hidden"));
+  if (closeNotificationActionBtn) closeNotificationActionBtn.addEventListener("click", () => notificationModal.classList.add("hidden"));
+  if (clearNotificationsBtn) clearNotificationsBtn.addEventListener("click", clearNotifications);
+
+  // Shortcuts Cheatsheet Modal
+  if (headerShortcutsBtn) headerShortcutsBtn.addEventListener("click", openShortcutsModal);
+  if (closeShortcutsModalBtn) closeShortcutsModalBtn.addEventListener("click", closeShortcutsModal);
+
+  // GAAP Financial Statements Modal
+  if (openFinancialStatementsBtn) openFinancialStatementsBtn.addEventListener("click", openFinancialStatements);
+  if (closeStatementsModalBtn) closeStatementsModalBtn.addEventListener("click", () => statementsModal.classList.add("hidden"));
+  if (closeStatementsActionBtn) closeStatementsActionBtn.addEventListener("click", () => statementsModal.classList.add("hidden"));
+  if (tabBalanceSheet) {
+    tabBalanceSheet.addEventListener("click", () => {
+      activeStatementTab = "balance-sheet";
+      tabBalanceSheet.classList.add("active");
+      if (tabProfitLoss) tabProfitLoss.classList.remove("active");
+      renderActiveStatement();
+    });
+  }
+  if (tabProfitLoss) {
+    tabProfitLoss.addEventListener("click", () => {
+      activeStatementTab = "profit-loss";
+      tabProfitLoss.classList.add("active");
+      if (tabBalanceSheet) tabBalanceSheet.classList.remove("active");
+      renderActiveStatement();
+    });
+  }
+  if (printStatementBtn) {
+    printStatementBtn.addEventListener("click", () => {
+      document.body.classList.add("printing-statement");
+      window.print();
+    });
+  }
+  window.addEventListener("afterprint", () => {
+    document.body.classList.remove("printing-statement");
+  });
+
+  // Forward Cash Flow Runway Horizon Selector
+  if (runwayHorizonSelector) {
+    const horizonPills = runwayHorizonSelector.querySelectorAll(".horizon-pill");
+    horizonPills.forEach(pill => {
+      pill.addEventListener("click", () => {
+        horizonPills.forEach(p => p.classList.remove("active"));
+        pill.classList.add("active");
+        const days = parseInt(pill.getAttribute("data-days"), 10) || 30;
+        activeRunwayDays = days;
+        renderRunwayProjection(days);
+      });
+    });
+  }
+
+  // Flexible CSV Column Mapping
+  [csvColDate, csvColDesc, csvColAmount, csvTargetAccount].forEach(el => {
+    if (el) el.addEventListener("change", reparseCsvWithMapping);
+  });
+
+  // Accessibility & Smart Automation Preferences
+  if (highContrastToggle) {
+    const isHighContrast = localStorage.getItem("expense_high_contrast") === "true";
+    highContrastToggle.checked = isHighContrast;
+    document.documentElement.setAttribute("data-contrast", isHighContrast ? "high" : "normal");
+    highContrastToggle.addEventListener("change", (e) => {
+      localStorage.setItem("expense_high_contrast", e.target.checked);
+      document.documentElement.setAttribute("data-contrast", e.target.checked ? "high" : "normal");
+      showToast(`High-contrast mode ${e.target.checked ? "enabled" : "disabled"}`, "info");
+      announceToScreenReader(`High contrast mode ${e.target.checked ? "enabled" : "disabled"}`);
+    });
+  }
+
+  if (autoPostDueBillsToggle) {
+    const isAutoPost = localStorage.getItem("expense_autopost_due") === "true";
+    autoPostDueBillsToggle.checked = isAutoPost;
+    autoPostDueBillsToggle.addEventListener("change", (e) => {
+      localStorage.setItem("expense_autopost_due", e.target.checked);
+      showToast(`Auto-posting bills ${e.target.checked ? "enabled" : "disabled"}`, "info");
+      announceToScreenReader(`Auto-post bills ${e.target.checked ? "enabled" : "disabled"}`);
+    });
+  }
+
+  // Ledger Integrity Audit & Balance Reconciliation Controls
+  if (verifyLedgerIntegrityBtn) verifyLedgerIntegrityBtn.addEventListener("click", openReconciliationModal);
+  if (closeReconciliationModalBtn) closeReconciliationModalBtn.addEventListener("click", () => reconciliationModal.classList.add("hidden"));
+  if (closeReconciliationActionBtn) closeReconciliationActionBtn.addEventListener("click", () => reconciliationModal.classList.add("hidden"));
+  if (reconcileBalancesBtn) reconcileBalancesBtn.addEventListener("click", reconcileBalancesToLedger);
+
   // Backdrop dismissal
   window.addEventListener("click", (e) => {
     if (e.target === budgetModal) closeBudgetConfigModal();
@@ -3567,6 +4397,10 @@ function init() {
     if (e.target === csvImportModal) csvImportModal.classList.add("hidden");
     if (e.target === cmdPaletteModal) closeCommandPalette();
     if (e.target === ruleModal) ruleModal.classList.add("hidden");
+    if (e.target === notificationModal) notificationModal.classList.add("hidden");
+    if (e.target === statementsModal) statementsModal.classList.add("hidden");
+    if (e.target === shortcutsModal) closeShortcutsModal();
+    if (e.target === reconciliationModal) reconciliationModal.classList.add("hidden");
   });
 
   setupPinListeners();
@@ -3574,6 +4408,9 @@ function init() {
   setupShortcuts();
   updateBiometricUI();
   updateStorageDiagnostics();
+
+  // Run automated recurring bills check on startup if enabled
+  autoProcessDueSubscriptions();
 
   if (hashedPin) {
     lockApp();
@@ -3599,5 +4436,6 @@ window.promptAdjustBalance = promptAdjustBalance;
 window.openReceiptViewer = openReceiptViewer;
 window.deleteCustomCategory = deleteCustomCategory;
 window.deleteRule = deleteRule;
+window.openReconciliationModal = openReconciliationModal;
 
 init();
