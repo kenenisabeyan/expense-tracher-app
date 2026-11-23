@@ -462,6 +462,54 @@ const cmdPaletteInput = document.getElementById("cmdPaletteInput");
 const cmdPaletteResults = document.getElementById("cmdPaletteResults");
 const closeCmdPaletteBtn = document.getElementById("closeCmdPaletteBtn");
 
+// Notifications Elements
+const headerNotificationBtn = document.getElementById("headerNotificationBtn");
+const notificationBadge = document.getElementById("notificationBadge");
+const notificationModal = document.getElementById("notificationModal");
+const unreadNotificationsPill = document.getElementById("unreadNotificationsPill");
+const notificationListContainer = document.getElementById("notificationListContainer");
+const clearNotificationsBtn = document.getElementById("clearNotificationsBtn");
+const closeNotificationModalBtn = document.getElementById("closeNotificationModalBtn");
+const closeNotificationActionBtn = document.getElementById("closeNotificationActionBtn");
+
+// Shortcuts Elements
+const headerShortcutsBtn = document.getElementById("headerShortcutsBtn");
+const shortcutsModal = document.getElementById("shortcutsModal");
+const closeShortcutsModalBtn = document.getElementById("closeShortcutsModalBtn");
+
+// Financial Statements Elements
+const openFinancialStatementsBtn = document.getElementById("openFinancialStatementsBtn");
+const statementsModal = document.getElementById("statementsModal");
+const closeStatementsModalBtn = document.getElementById("closeStatementsModalBtn");
+const closeStatementsActionBtn = document.getElementById("closeStatementsActionBtn");
+const tabBalanceSheet = document.getElementById("tabBalanceSheet");
+const tabProfitLoss = document.getElementById("tabProfitLoss");
+const statementContentContainer = document.getElementById("statementContentContainer");
+const printStatementBtn = document.getElementById("printStatementBtn");
+
+// Forward Cash Flow Runway Elements
+const runwayHorizonSelector = document.getElementById("runwayHorizonSelector");
+const runwayDailyLimit = document.getElementById("runwayDailyLimit");
+const runwayHorizonBalance = document.getElementById("runwayHorizonBalance");
+const runwayHorizonDate = document.getElementById("runwayHorizonDate");
+const runwayCommittedBills = document.getElementById("runwayCommittedBills");
+const runwayBillsCount = document.getElementById("runwayBillsCount");
+const runwayProjectionCanvas = document.getElementById("runwayProjectionChart");
+
+// Flexible CSV Column Mapping Elements
+const csvColumnMappingSection = document.getElementById("csvColumnMappingSection");
+const csvColDate = document.getElementById("csvColDate");
+const csvColDesc = document.getElementById("csvColDesc");
+const csvColAmount = document.getElementById("csvColAmount");
+const csvTargetAccount = document.getElementById("csvTargetAccount");
+
+let runwayProjectionChartInstance = null;
+let activeRunwayDays = 30;
+let activeStatementTab = "balance-sheet";
+let acknowledgedNotifications = new Set(JSON.parse(localStorage.getItem("expense_ack_notifications") || "[]"));
+let rawCsvRows = [];
+let rawCsvHeaders = [];
+
 // --- HELPER UTILITIES ---
 function formatCurrency(amount) {
   const formatted = Number(amount || 0).toLocaleString(undefined, {
