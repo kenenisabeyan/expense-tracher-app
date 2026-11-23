@@ -787,15 +787,24 @@
 
         <!-- Security & Cryptographic PIN Lock Settings -->
         <div class="settings-section">
-          <h3>🔒 Privacy & Cryptographic Passcode Lock</h3>
+          <h3>🔒 Privacy & Cryptographic Security</h3>
           <div class="setting-row">
             <div>
-              <strong>4-Digit Security PIN (SHA-256 Encrypted)</strong>
+              <strong>4-Digit Security PIN (SHA-256 Salted Hash)</strong>
               <p class="setting-desc" id="pinSettingStatusText">Passcode lock is currently disabled.</p>
             </div>
             <div class="pin-actions">
               <button id="setPinBtn" class="btn-sm btn-primary">Set Passcode</button>
               <button id="removePinBtn" class="btn-sm btn-danger-outline hidden">Disable PIN</button>
+            </div>
+          </div>
+          <div class="setting-row" style="margin-top: 12px;" id="biometricSettingRow">
+            <div>
+              <strong>Biometric Passkey Authentication (WebAuthn)</strong>
+              <p class="setting-desc" id="biometricSettingStatus">Use Windows Hello, Touch ID, or Face ID to unlock instantly.</p>
+            </div>
+            <div>
+              <button id="toggleBiometricBtn" class="btn-sm btn-secondary">Register Biometric</button>
             </div>
           </div>
         </div>
