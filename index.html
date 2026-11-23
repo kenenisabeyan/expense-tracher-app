@@ -5,12 +5,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#4f46e5">
-  <meta name="description" content="Ultimate Offline-First Personal Finance, Multi-Account, Budgeting, Investment Forecast & Cash-Flow Intelligence Platform.">
+  <meta name="description" content="Commercial-Grade Offline-First Personal Finance, Multi-Account, Budgeting, Investment Forecast & Cash-Flow Intelligence Platform.">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
-  <title>Smart Expense Tracker & Financial Suite Ultimate</title>
+  <title>Smart Expense Tracker & Financial Suite Enterprise</title>
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,12 +22,12 @@
 </head>
 
 <body>
-  <!-- PIN Passcode Lock Screen Overlay (Protected State) -->
+  <!-- Cryptographic PIN Lock Screen Overlay -->
   <div id="pinLockOverlay" class="pin-lock-overlay hidden" role="dialog" aria-modal="true" aria-label="Enter Security Passcode">
     <div class="pin-card">
       <div class="pin-avatar">🔒</div>
       <h2>Security Passcode</h2>
-      <p>Enter your 4-digit PIN to access your financial records</p>
+      <p>Enter your 4-digit PIN to access your encrypted financial workstation</p>
       <div class="pin-dots">
         <span class="pin-dot" id="dot1"></span>
         <span class="pin-dot" id="dot2"></span>
@@ -57,7 +57,7 @@
     <span>📡 Working in Offline Mode (Changes saved securely on this device)</span>
   </div>
 
-  <!-- Toast Notification Container -->
+  <!-- Toast Notification Container with Undo Support -->
   <div id="toastContainer" class="toast-container" aria-live="polite"></div>
 
   <div class="app-layout">
@@ -66,8 +66,8 @@
       <div class="brand">
         <div class="brand-icon">💰</div>
         <div>
-          <h1>Smart Expense Tracker Ultimate</h1>
-          <p class="subtitle">Multi-Account, Budgeting, Subscriptions & Wealth Forecasting</p>
+          <h1>Smart Expense Tracker Enterprise</h1>
+          <p class="subtitle">Multi-Account, Split-Ledger, Wealth Simulator & Bank-Grade Security</p>
         </div>
       </div>
 
@@ -77,15 +77,20 @@
           ➕ <span>New Entry</span>
         </button>
 
-        <!-- Lock Now Button (Visible when PIN active) -->
+        <!-- Currency Converter Modal Trigger -->
+        <button id="headerConvertBtn" class="btn-icon" title="Travel Currency Converter" aria-label="Currency Converter">
+          💱
+        </button>
+
+        <!-- Lock Now Button -->
         <button id="headerLockBtn" class="btn-icon hidden" title="Lock Application Now" aria-label="Lock App">
           🔒
         </button>
 
-        <!-- Currency Selector -->
+        <!-- Base Currency Selector -->
         <div class="currency-wrapper">
-          <label for="currencySelect" class="sr-only">Currency</label>
-          <select id="currencySelect" title="Select Currency">
+          <label for="currencySelect" class="sr-only">Base Currency</label>
+          <select id="currencySelect" title="Select Base Currency">
             <option value="$" selected>USD ($)</option>
             <option value="€">EUR (€)</option>
             <option value="£">GBP (£)</option>
@@ -94,13 +99,20 @@
             <option value="¥">JPY (¥)</option>
             <option value="CAD $">CAD ($)</option>
             <option value="A$">AUD ($)</option>
+            <option value="CHF">CHF (Fr)</option>
           </select>
         </div>
 
-        <!-- Dark / Light Theme Toggle -->
-        <button id="themeToggle" class="btn-icon" title="Toggle Dark/Light Mode" aria-label="Toggle Theme">
-          <span class="theme-icon" id="themeIcon">🌙</span>
-        </button>
+        <!-- Theme Selector (Light / Dark / OLED / System) -->
+        <div class="theme-wrapper">
+          <label for="themeSelect" class="sr-only">Theme Mode</label>
+          <select id="themeSelect" title="Select Theme">
+            <option value="light">☀️ Light</option>
+            <option value="dark">🌙 Dark</option>
+            <option value="oled">🖤 OLED</option>
+            <option value="system">🖥️ System</option>
+          </select>
+        </div>
       </div>
     </header>
 
@@ -172,7 +184,7 @@
 
       <!-- Main Dashboard Grid -->
       <div class="main-grid">
-        <!-- Left: Form & Accounts Snapshot -->
+        <!-- Left: Form & Budgets -->
         <div class="column-left">
           <!-- Add / Edit Form Card -->
           <div class="card form-card">
@@ -192,7 +204,7 @@
               <!-- Title / Description -->
               <div class="form-group">
                 <label for="text">Description / Title <span class="shortcut-hint">(Ctrl+N)</span></label>
-                <input type="text" id="text" placeholder="e.g. Salary, Groceries, Rent, Transfer to Savings..." required maxlength="60">
+                <input type="text" id="text" placeholder="e.g. Salary, Whole Foods, Transfer to Savings..." required maxlength="60">
               </div>
 
               <!-- Amount, Account & Category Row -->
@@ -205,7 +217,6 @@
                   </div>
                 </div>
 
-                <!-- Source Account -->
                 <div class="form-group flex-1">
                   <label for="accountSelect" id="accountLabel">Account</label>
                   <select id="accountSelect" required></select>
@@ -221,13 +232,31 @@
               <!-- Category & Date Row -->
               <div class="form-row" id="categoryDateRow">
                 <div class="form-group flex-1" id="categoryGroup">
-                  <label for="category">Category</label>
+                  <div class="category-header-row">
+                    <label for="category">Category</label>
+                    <label class="split-checkbox-label" id="splitToggleLabel">
+                      <input type="checkbox" id="splitCheckbox"> Split Categories
+                    </label>
+                  </div>
                   <select id="category" required></select>
                 </div>
 
                 <div class="form-group flex-1">
                   <label for="date">Date</label>
                   <input type="date" id="date" required>
+                </div>
+              </div>
+
+              <!-- Split Categories Container (Shown when Split Checked) -->
+              <div id="splitSection" class="split-section hidden">
+                <div class="split-header">
+                  <span>Split Allocations</span>
+                  <button type="button" class="btn-sm btn-outline" id="addSplitRowBtn">+ Add Split</button>
+                </div>
+                <div id="splitRowsContainer" class="split-rows-container"></div>
+                <div class="split-balance-bar">
+                  <span>Split Total: <strong id="splitSumDisplay">$0.00</strong></span>
+                  <span>Remaining: <strong id="splitRemainingDisplay">$0.00</strong></span>
                 </div>
               </div>
 
@@ -239,7 +268,7 @@
                 </div>
 
                 <div class="form-group flex-1">
-                  <label for="receiptFileInput">Receipt Photo <span class="shortcut-hint">(optional)</span></label>
+                  <label for="receiptFileInput">Receipt Photo <span class="shortcut-hint">(compressed)</span></label>
                   <input type="file" id="receiptFileInput" accept="image/*" class="file-input-compact">
                   <div id="receiptPreviewContainer" class="receipt-preview-box hidden">
                     <img id="receiptPreviewImg" alt="Receipt preview">
@@ -328,7 +357,7 @@
     </main>
 
     <!-- ========================================================
-         VIEW 3: TRANSACTIONS LEDGER (FULL PAGE)
+         VIEW 3: TRANSACTIONS LEDGER (WITH VIRTUAL PAGINATION)
          ======================================================== -->
     <main id="view-transactions" class="view-container">
       <div class="card ledger-full-card">
@@ -338,8 +367,9 @@
             <p class="history-count" id="ledgerCountLabel">Showing 0 records</p>
           </div>
           <div class="ledger-actions">
+            <button id="importCsvBtn" class="btn-sm btn-outline" title="Import Bank CSV statement">📥 Import Bank CSV</button>
             <button id="ledgerPrintBtn" class="btn-sm btn-outline" title="Print or save as PDF">🖨️ Print / PDF</button>
-            <button id="exportCsvBtn" class="btn-sm btn-outline" title="Export transactions to CSV">📥 Export CSV</button>
+            <button id="exportCsvBtn" class="btn-sm btn-outline" title="Export transactions to CSV">📤 Export CSV</button>
             <button id="bulkDeleteBtn" class="btn-sm btn-danger-outline hidden" title="Delete selected transactions">🗑️ Delete Selected (<span id="selectedCount">0</span>)</button>
           </div>
         </div>
@@ -355,9 +385,7 @@
         <!-- Tag Cloud Selector -->
         <div id="tagFilterBar" class="tag-filter-bar">
           <span class="tag-filter-label">Filter by Tag:</span>
-          <div id="tagChipsContainer" class="tag-chips-container">
-            <!-- Populated via script.js -->
-          </div>
+          <div id="tagChipsContainer" class="tag-chips-container"></div>
         </div>
 
         <!-- Filter Toolbar -->
@@ -408,15 +436,31 @@
                 <th width="90" class="text-center">Actions</th>
               </tr>
             </thead>
-            <tbody id="ledgerTableBody">
-              <!-- Populated via script.js -->
-            </tbody>
+            <tbody id="ledgerTableBody"></tbody>
           </table>
 
           <div id="ledgerEmptyState" class="empty-state hidden">
             <div class="empty-icon">📭</div>
             <h4>No transactions match your query</h4>
             <p>Try clearing filters or add a new transaction.</p>
+          </div>
+        </div>
+
+        <!-- Performance Pagination Controls -->
+        <div class="pagination-bar" id="paginationBar">
+          <div class="pagination-info">
+            <span>Rows per page:</span>
+            <select id="pageSizeSelect">
+              <option value="25" selected>25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+          <div class="pagination-nav">
+            <button class="btn-sm btn-outline" id="prevPageBtn">Previous</button>
+            <span id="pageNumberDisplay">Page 1 of 1</span>
+            <button class="btn-sm btn-outline" id="nextPageBtn">Next</button>
           </div>
         </div>
       </div>
@@ -615,12 +659,12 @@
           <h2>Application Settings & Data Sovereignty</h2>
         </div>
 
-        <!-- Security & PIN Lock Settings -->
+        <!-- Security & Cryptographic PIN Lock Settings -->
         <div class="settings-section">
-          <h3>🔒 Privacy & Passcode Lock</h3>
+          <h3>🔒 Privacy & Cryptographic Passcode Lock</h3>
           <div class="setting-row">
             <div>
-              <strong>4-Digit Security PIN</strong>
+              <strong>4-Digit Security PIN (SHA-256 Encrypted)</strong>
               <p class="setting-desc" id="pinSettingStatusText">Passcode lock is currently disabled.</p>
             </div>
             <div class="pin-actions">
@@ -637,8 +681,8 @@
           <h3>🔊 Audio Feedback</h3>
           <div class="setting-row">
             <div>
-              <strong>Interface Chimes & Sounds</strong>
-              <p class="setting-desc">Pleasant synthesized audio cues for transactions, navigation, and alerts.</p>
+              <strong>Web Audio API Synthesizer</strong>
+              <p class="setting-desc">Zero-asset harmonic chimes on transactions, navigation, and deletions.</p>
             </div>
             <div>
               <label class="toggle-switch">
@@ -651,37 +695,16 @@
 
         <hr class="modal-divider">
 
-        <!-- Preferences -->
+        <!-- Custom Categories Manager -->
         <div class="settings-section">
-          <h3>Preferences</h3>
-          <div class="setting-row">
+          <div class="card-header" style="padding:0; margin-bottom:10px;">
             <div>
-              <strong>Currency Symbol</strong>
-              <p class="setting-desc">Selected display unit for all financial numbers.</p>
+              <h3>🏷️ Custom Categories Manager</h3>
+              <p class="setting-desc">Add, edit, or customize category taxonomies.</p>
             </div>
-            <div style="width: 140px;">
-              <select id="settingsCurrencySelect">
-                <option value="$">USD ($)</option>
-                <option value="€">EUR (€)</option>
-                <option value="£">GBP (£)</option>
-                <option value="ETB">ETB (Br)</option>
-                <option value="₹">INR (₹)</option>
-                <option value="¥">JPY (¥)</option>
-                <option value="CAD $">CAD ($)</option>
-                <option value="A$">AUD ($)</option>
-              </select>
-            </div>
+            <button class="btn-sm btn-outline" id="addNewCustomCatBtn">+ New Category</button>
           </div>
-
-          <div class="setting-row">
-            <div>
-              <strong>Color Theme</strong>
-              <p class="setting-desc">Switch between light mode and high-contrast dark theme.</p>
-            </div>
-            <div>
-              <button id="settingsThemeToggle" class="btn-sm btn-outline">Toggle Dark / Light</button>
-            </div>
-          </div>
+          <div id="customCategoriesList" class="custom-cat-grid"></div>
         </div>
 
         <hr class="modal-divider">
@@ -689,7 +712,7 @@
         <!-- Backup & Portability -->
         <div class="settings-section">
           <h3>Backup & Data Portability</h3>
-          <p class="setting-desc">All your financial data is stored locally in your browser sandbox. Export snapshots regularly for safe keeping.</p>
+          <p class="setting-desc">All your financial records are encrypted and stored in your device sandbox. Export snapshots regularly for cold storage.</p>
           <div class="settings-actions-group">
             <button id="settingsExportJsonBtn" class="btn btn-primary">📤 Export Full JSON Backup</button>
             <button id="settingsExportCsvBtn" class="btn btn-secondary">📥 Export CSV Spreadsheet</button>
@@ -730,8 +753,8 @@
   </div>
 
   <!-- ========================================================
-       MODAL: RECEIPT LIGHTBOX VIEWER
-       ======================================================== -->
+         MODAL: RECEIPT LIGHTBOX VIEWER
+         ======================================================== -->
   <div id="receiptModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Receipt Preview">
     <div class="modal-card receipt-modal-card">
       <div class="modal-header">
@@ -745,8 +768,77 @@
   </div>
 
   <!-- ========================================================
-       MODAL: ADD / EDIT ACCOUNT
-       ======================================================== -->
+         MODAL: TRAVEL CURRENCY CONVERTER
+         ======================================================== -->
+  <div id="convertModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Travel Currency Converter">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>💱 Travel Currency Calculator</h3>
+        <button class="modal-close-btn" id="closeConvertModalBtn" aria-label="Close">&times;</button>
+      </div>
+      <p class="modal-description">Calculate and record foreign spending converted into your base currency.</p>
+      <form id="convertForm">
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="convertForeignAmount">Foreign Amount</label>
+            <input type="number" id="convertForeignAmount" placeholder="100.00" step="0.01" min="0.01" required>
+          </div>
+          <div class="form-group flex-1">
+            <label for="convertForeignCurrency">Foreign Currency</label>
+            <select id="convertForeignCurrency">
+              <option value="EUR">EUR (€)</option>
+              <option value="USD">USD ($)</option>
+              <option value="GBP">GBP (£)</option>
+              <option value="ETB">ETB (Br)</option>
+              <option value="JPY">JPY (¥)</option>
+              <option value="CAD">CAD ($)</option>
+              <option value="AUD">AUD ($)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="convertExchangeRate">Exchange Rate (Foreign to Base Currency)</label>
+          <input type="number" id="convertExchangeRate" placeholder="1.08" step="0.0001" min="0.0001" value="1.0000" required>
+        </div>
+        <div class="convert-result-box">
+          <span>Converted to Base Currency:</span>
+          <h2 id="convertResultDisplay">$0.00</h2>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="closeConvertActionBtn">Close</button>
+          <button type="button" class="btn btn-primary" id="applyConvertedToFormBtn">Paste into Transaction</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================
+         MODAL: BANK CSV STATEMENT IMPORTER
+         ======================================================== -->
+  <div id="csvImportModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-label="Import Bank CSV">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📥 Import Bank CSV Statement</h3>
+        <button class="modal-close-btn" id="closeCsvImportModalBtn" aria-label="Close">&times;</button>
+      </div>
+      <p class="modal-description">Upload standard CSV exports from Chase, Wells Fargo, Bank of America, Revolut, etc.</p>
+      <div class="file-upload-box">
+        <input type="file" id="bankCsvFileInput" accept=".csv" class="file-input">
+      </div>
+      <div id="csvPreviewContainer" class="csv-preview-container hidden">
+        <h4>Preview (<span id="csvParsedRowCount">0</span> rows detected)</h4>
+        <div id="csvSampleRows" class="csv-sample-rows"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="cancelCsvImportBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="executeCsvImportBtn" disabled>Import Transactions</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================
+         MODAL: ADD / EDIT ACCOUNT
+         ======================================================== -->
   <div id="accountModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle">
     <div class="modal-card">
       <div class="modal-header">
@@ -786,8 +878,8 @@
   </div>
 
   <!-- ========================================================
-       MODAL: BUDGET CONFIGURATION
-       ======================================================== -->
+         MODAL: BUDGET CONFIGURATION
+         ======================================================== -->
   <div id="budgetModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="budgetModalTitle">
     <div class="modal-card">
       <div class="modal-header">
@@ -807,8 +899,8 @@
   </div>
 
   <!-- ========================================================
-       MODAL: SAVINGS GOAL
-       ======================================================== -->
+         MODAL: SAVINGS GOAL
+         ======================================================== -->
   <div id="goalModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="goalModalTitle">
     <div class="modal-card">
       <div class="modal-header">
@@ -843,8 +935,8 @@
   </div>
 
   <!-- ========================================================
-       MODAL: SUBSCRIPTION
-       ======================================================== -->
+         MODAL: SUBSCRIPTION
+         ======================================================== -->
   <div id="subModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="subModalTitle">
     <div class="modal-card">
       <div class="modal-header">
