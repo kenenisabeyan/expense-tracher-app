@@ -48,6 +48,11 @@
         <button type="button" class="pin-key" data-digit="0">0</button>
         <button type="button" class="pin-key pin-delete" id="pinDeleteBtn">⌫</button>
       </div>
+      <div class="pin-biometric-container">
+        <button type="button" class="btn-biometric hidden" id="biometricUnlockBtn">
+          <span>👆 Quick Unlock with Passkey / Biometrics</span>
+        </button>
+      </div>
       <div id="pinErrorMsg" class="pin-error hidden">Incorrect Passcode. Try again.</div>
     </div>
   </div>
@@ -72,6 +77,14 @@
       </div>
 
       <div class="header-actions">
+        <!-- Command Palette Trigger Button -->
+        <button id="headerCmdPaletteBtn" class="btn-icon-cmd" title="Command Palette (Ctrl+K / ⌘K)" aria-label="Open Command Palette">
+          <span>⌘K</span>
+        </button>
+
+        <!-- Network / Sync Status Pill -->
+        <div id="networkStatusBadge" class="network-badge online" title="Status: Online & Ready">🟢 Online</div>
+
         <!-- Quick Add Transaction Button -->
         <button id="headerQuickAddBtn" class="btn-primary-header" title="Quick Add Transaction (Ctrl+N)">
           ➕ <span>New Entry</span>
@@ -277,6 +290,26 @@
                 </div>
               </div>
 
+              <!-- Tax Deductible & Classification Row -->
+              <div class="form-row tax-classification-row">
+                <div class="form-group flex-1">
+                  <label class="checkbox-inline-label">
+                    <input type="checkbox" id="taxDeductibleCheckbox"> 🛡️ Tax Deductible / Write-off
+                  </label>
+                </div>
+                <div class="form-group flex-1 hidden" id="taxCategoryGroup">
+                  <label for="taxCategorySelect">Tax Classification</label>
+                  <select id="taxCategorySelect">
+                    <option value="business">Schedule C / Business Expense</option>
+                    <option value="home_office">Home Office & Utilities</option>
+                    <option value="charity">Charitable Contribution (501c3)</option>
+                    <option value="medical">Health & Medical (HSA/FSA)</option>
+                    <option value="education">Education & Development</option>
+                    <option value="vehicle">Vehicle & Business Travel</option>
+                  </select>
+                </div>
+              </div>
+
               <!-- Actions -->
               <div class="form-actions">
                 <button type="submit" id="submitBtn" class="btn btn-primary">
@@ -409,6 +442,12 @@
 
             <select id="filterCategory" title="Filter by Category">
               <option value="all">All Categories</option>
+            </select>
+
+            <select id="filterTax" title="Filter by Tax Deductibility">
+              <option value="all">All Tax Status</option>
+              <option value="deductible">🛡️ Tax Deductible Only</option>
+              <option value="non-deductible">Standard Only</option>
             </select>
 
             <select id="sortBy" title="Sort By">
@@ -646,6 +685,93 @@
             <h4>Strategic Financial Recommendations</h4>
             <div id="reportsRecommendations" class="recommendations-list"></div>
           </div>
+        </div>
+
+        <!-- Tax Shield & Deductible Expense Center -->
+        <div class="card full-width-card tax-center-card">
+          <div class="card-header">
+            <div>
+              <h3>🛡️ Tax Shield & Deductible Expense Center</h3>
+              <p class="card-subtext">Track write-offs, tax-deductible expenditures, and estimated tax savings</p>
+            </div>
+            <div class="tax-bracket-selector-group">
+              <label for="taxRateSelect">Tax Bracket:</label>
+              <select id="taxRateSelect" class="tax-rate-select">
+                <option value="0.12">12%</option>
+                <option value="0.22">22%</option>
+                <option value="0.24" selected>24% (Standard)</option>
+                <option value="0.32">32%</option>
+                <option value="0.35">35%</option>
+                <option value="0.37">37% (Top Tier)</option>
+              </select>
+              <button type="button" id="exportTaxScheduleBtn" class="btn-sm btn-outline">📥 Export Tax CSV</button>
+            </div>
+          </div>
+
+          <div class="tax-stats-grid">
+            <div class="tax-stat-box">
+              <span class="tax-stat-label">Total Deductible YTD</span>
+              <h3 id="taxTotalDeductible">$0.00</h3>
+              <span class="tax-stat-sub" id="taxDeductibleCount">0 transactions flagged</span>
+            </div>
+            <div class="tax-stat-box highlight">
+              <span class="tax-stat-label">Estimated Tax Shield Savings</span>
+              <h3 id="taxEstimatedSavings" class="text-income">$0.00</h3>
+              <span class="tax-stat-sub">Reduces net tax liability</span>
+            </div>
+            <div class="tax-stat-box">
+              <span class="tax-stat-label">Top Tax Category</span>
+              <h3 id="taxTopCategory">None</h3>
+              <span class="tax-stat-sub" id="taxTopCategoryAmount">$0.00</span>
+            </div>
+          </div>
+
+          <div class="tax-categories-breakdown">
+            <h4>Tax Deductions by Classification</h4>
+            <div id="taxCategoriesList" class="tax-progress-list"></div>
+          </div>
+        </div>
+
+        <!-- Smart Debt Payoff Strategy Simulator (Snowball vs. Avalanche) -->
+        <div class="card full-width-card debt-planner-card">
+          <div class="card-header">
+            <div>
+              <h3>💳 Smart Debt Payoff Optimizer (Snowball vs. Avalanche)</h3>
+              <p class="card-subtext">Mathematical comparison of debt liquidation strategies to eliminate liabilities with minimal interest</p>
+            </div>
+            <div class="debt-strategy-toggle-group">
+              <label class="radio-inline">
+                <input type="radio" name="debtStrategy" value="avalanche" checked>
+                <span><strong>Debt Avalanche</strong> (Highest APR first)</span>
+              </label>
+              <label class="radio-inline">
+                <input type="radio" name="debtStrategy" value="snowball">
+                <span><strong>Debt Snowball</strong> (Lowest Balance first)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="debt-controls-row">
+            <div class="form-group flex-1">
+              <label for="extraDebtPayment">Extra Monthly Payment Allocated</label>
+              <div class="input-with-symbol">
+                <span class="currency-symbol">$</span>
+                <input type="number" id="extraDebtPayment" value="250" min="0" step="25">
+              </div>
+            </div>
+            <div class="debt-summary-stats flex-2" id="debtSummaryStats">
+              <div class="debt-stat-pill">
+                <span>Debt-Free Horizon</span>
+                <strong id="debtFreeDateDisplay">--</strong>
+              </div>
+              <div class="debt-stat-pill">
+                <span>Interest Saved</span>
+                <strong id="debtInterestSavedDisplay" class="text-income">$0.00</strong>
+              </div>
+            </div>
+          </div>
+
+          <div id="debtAccountsPayoffList" class="debt-payoff-list"></div>
         </div>
       </div>
     </main>
